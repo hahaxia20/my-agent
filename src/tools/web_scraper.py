@@ -5,6 +5,7 @@
 
 from typing import Dict, Any, List, Optional
 from src.tools.base import BaseTool, ToolExecutionError
+from src.core.security import InputSecurityFilter
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -61,6 +62,21 @@ class WebScraperTool(BaseTool):
             return all([result.scheme in ['http', 'https'], result.netloc])
         except:
             return False
+    
+    def _check_url_security(self, url: str) -> tuple[bool, str]:
+        """
+        安全检查 URL（防止 SSRF 攻击）
+        
+        Returns:
+            (is_safe, reason)
+        """
+        # 使用安全过滤器检查
+        is_safe, reason = InputSecurityFilter.check_url(url)
+        
+        if not is_safe:
+            logger.warning(f"🚨 [SSRF 防护] 阻止访问: {url} - {reason}")
+        
+        return is_safe, reason
     
     def _scrape_sync(self, url: str, extract_links: bool = False, 
                    extract_images: bool = False, max_content_length: int = 5000) -> Dict[str, Any]:
@@ -287,6 +303,15 @@ class WebScraperTool(BaseTool):
             return {
                 "success": False,
                 "error": "URL 格式不正确，请使用完整 URL（如 https://example.com）",
+                "content": ""
+            }
+        
+        # 🔒 安全检查：防止 SSRF 攻击
+        is_safe, security_reason = self._check_url_security(url)
+        if not is_safe:
+            return {
+                "success": False,
+                "error": f"安全限制：{security_reason}",
                 "content": ""
             }
         

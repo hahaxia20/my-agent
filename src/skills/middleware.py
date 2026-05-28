@@ -19,7 +19,7 @@ def load_skill(skill_name: str) -> str:
     policies, and guidelines for the skill area.
 
     Args:
-        skill_name: The name of the skill to load (e.g., "web-content-analyzer", "code-analysis", "data-analysis")
+        skill_name: The name of the skill to load (e.g., "web-content-analyzer", "data-analysis")
     """
     logger.info(f"📥 [加载 Skill] {skill_name}")
     

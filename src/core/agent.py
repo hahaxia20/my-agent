@@ -42,6 +42,7 @@ from src.core.stream_manager import (
     StreamBuffer, StreamFormatter, StreamMetrics,
     StreamChunk, StreamEventType
 )
+from src.core.security import InputSecurityFilter, OutputSecurityFilter
 from src.storage.mongodb import get_mongodb
 from src.tools.manager import tool_manager
 from src.skills.manager import skill_registry
@@ -427,6 +428,20 @@ class MyAgent:
         logger.info(f"💬 [对话开始] session_id={session_id}, user_id={user_id}")
         logger.debug(f"   用户查询: {_safe_truncate(user_query, 500)}")
 
+        # 🔒 安全检查：防止 Prompt Injection
+        security_result = InputSecurityFilter.check_input(user_query)
+        if not security_result.is_safe:
+            logger.warning(f"🚨 [安全拦截] {security_result.reason}")
+            return {
+                "reply": "抱歉，您的请求包含了不安全的内容，我无法处理。",
+                "session_id": session_id,
+                "success": False,
+                "error": "security_violation",
+                "security_reason": security_result.reason
+            }
+        elif security_result.risk_level == "medium":
+            logger.info(f"⚠️ [安全警告] {security_result.reason}")
+
         request_start = time.time()
 
         # 创建或复用会话
@@ -600,6 +615,20 @@ class MyAgent:
         """
         logger.info(f"🎭 [复杂任务] 开始处理: {user_query[:100]}...")
         
+        # 🔒 安全检查：防止 Prompt Injection
+        security_result = InputSecurityFilter.check_input(user_query)
+        if not security_result.is_safe:
+            logger.warning(f"🚨 [安全拦截] {security_result.reason}")
+            return {
+                "reply": "抱歉，您的请求包含了不安全的内容，我无法处理。",
+                "session_id": session_id,
+                "success": False,
+                "error": "security_violation",
+                "security_reason": security_result.reason
+            }
+        elif security_result.risk_level == "medium":
+            logger.info(f"⚠️ [安全警告] {security_result.reason}")
+        
         request_start = time.time()
         
         # 创建或复用会话
@@ -709,6 +738,15 @@ class MyAgent:
 
         logger.info(f"🌊 [流式对话开始] session_id={session_id}, user_id={user_id}")
         logger.debug(f"   用户查询: {_safe_truncate(user_query, 500)}")
+
+        # 🔒 安全检查：防止 Prompt Injection
+        security_result = InputSecurityFilter.check_input(user_query)
+        if not security_result.is_safe:
+            logger.warning(f"🚨 [安全拦截] {security_result.reason}")
+            yield "抱歉，您的请求包含了不安全的内容，我无法处理。"
+            return
+        elif security_result.risk_level == "medium":
+            logger.info(f"⚠️ [安全警告] {security_result.reason}")
 
         request_start = time.time()
         metrics = StreamMetrics() if enable_metrics else None
@@ -920,7 +958,20 @@ class MyAgent:
             logger.error(f"💥 [流式错误] {e}", exc_info=True)
             if metrics:
                 metrics.record_error()
-            yield f"\n抱歉，出现错误：{str(e)}"
+            
+            # 友好的错误提示
+            error_msg = str(e)
+            if "403" in error_msg or "PermissionDenied" in error_msg:
+                if "free tier" in error_msg.lower() or "quota" in error_msg.lower():
+                    yield "\n❌ API 额度已用完，请检查你的 API Key 配置或联系管理员。"
+                else:
+                    yield "\n❌ API 访问被拒绝，请检查 API Key 是否正确。"
+            elif "401" in error_msg or "Authentication" in error_msg:
+                yield "\n❌ API Key 无效，请检查配置。"
+            elif "429" in error_msg or "rate limit" in error_msg.lower():
+                yield "\n⏳ 请求过于频繁，请稍后重试。"
+            else:
+                yield f"\n抱歉，出现错误：{str(e)[:200]}"
 
     # ========== 会话管理 ==========
 

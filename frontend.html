@@ -605,6 +605,218 @@
             font-size: 14px;
         }
 
+        /* 模式切换提示 */
+        .mode-hint {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 20px;
+            background: linear-gradient(135deg, #667eea10 0%, #764ba210 100%);
+            border: 1px solid #667eea30;
+            border-radius: 10px;
+            margin: 15px auto 30px;
+            max-width: 600px;
+        }
+
+        .mode-hint-icon {
+            font-size: 18px;
+        }
+
+        .mode-hint-text {
+            font-size: 14px;
+            color: #555;
+        }
+
+        .mode-hint-btn {
+            padding: 6px 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            white-space: nowrap;
+        }
+
+        .mode-hint-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        /* 能力展示卡片 */
+        .capabilities-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-top: 30px;
+            max-width: 800px;
+            width: 100%;
+        }
+
+        .capability-card {
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: left;
+        }
+
+        .capability-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .capability-icon {
+            font-size: 32px;
+            margin-bottom: 12px;
+        }
+
+        .capability-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .capability-desc {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.5;
+        }
+
+        .capability-example {
+            margin-top: 10px;
+            padding: 8px 12px;
+            background: #f5f5f5;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #667eea;
+            font-style: italic;
+        }
+
+        /* 资讯区域 */
+        .news-section {
+            margin-top: 40px;
+            width: 100%;
+            max-width: 900px;
+        }
+
+        .news-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding: 0 10px;
+        }
+
+        .news-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .news-refresh {
+            padding: 6px 12px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #666;
+            transition: all 0.2s;
+        }
+
+        .news-refresh:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        .news-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+        }
+
+        .news-card {
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 12px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .news-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .news-category {
+            display: inline-block;
+            padding: 4px 10px;
+            background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+            color: #667eea;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .news-headline {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            line-height: 1.5;
+            margin-bottom: 8px;
+        }
+
+        .news-summary {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 12px;
+        }
+
+        .news-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: #999;
+        }
+
+        .news-action {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        /* 复杂模式标识 */
+        .news-badge {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            padding: 3px 8px;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .news-card {
+            position: relative;
+        }
+
         .loading {
             display: inline-block;
             width: 16px;
@@ -702,9 +914,31 @@
             <div class="chat-container" id="chatContainer">
                 <div class="empty-state">
                     <div class="empty-state-icon">🦌</div>
-                    <h3>你好！我是你的 AI 助手</h3>
-                    <p>我可以帮你解答问题、分析数据、编写代码，或者完成各种复杂任务</p>
-                    <p style="margin-top: 12px; font-size: 13px; color: #999;">💡 提示：试试输入 "帮我分析一下最近的天气" 或 "写一个简单的 Python 程序"</p>
+                    <h3 id="welcomeTitle">你好！我是你的 AI 助手</h3>
+                    <p id="welcomeDesc">我可以帮你分析网页、处理数据、搜索信息，完成各种复杂任务</p>
+                    
+                    <!-- 模式切换提示（仅在普通模式显示） -->
+                    <div class="mode-hint" id="modeHint">
+                        <span class="mode-hint-icon">💡</span>
+                        <span class="mode-hint-text">如果有复杂任务（多维度分析、对比研究等），可以切换到</span>
+                        <button class="mode-hint-btn" onclick="switchMode('complex')">🚀 复杂模式</button>
+                    </div>
+                                        
+                    <!-- 资讯区域 -->
+                    <div class="news-section">
+                        <div class="news-header">
+                            <div class="news-title">
+                                <span>📰</span>
+                                <span>今日资讯</span>
+                            </div>
+                            <button class="news-refresh" onclick="refreshNews()">
+                                🔄 换一批
+                            </button>
+                        </div>
+                        <div class="news-grid" id="newsGrid">
+                            <!-- 资讯卡片将通过 JavaScript 动态生成 -->
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -768,7 +1002,27 @@
                 }
             }
             
+            // 更新欢迎文本
+            updateWelcomeText(mode);
+            
             console.log(`切换到 ${mode} 模式`);
+        }
+
+        // 更新欢迎文本
+        function updateWelcomeText(mode) {
+            const welcomeTitle = document.getElementById('welcomeTitle');
+            const welcomeDesc = document.getElementById('welcomeDesc');
+            const modeHint = document.getElementById('modeHint');
+            
+            if (mode === 'normal') {
+                welcomeTitle.textContent = '你好！我是你的 AI 助手';
+                welcomeDesc.textContent = '我可以帮你分析网页、处理数据、搜索信息，完成各种复杂任务';
+                modeHint.style.display = 'flex';  // 显示模式切换提示
+            } else if (mode === 'complex') {
+                welcomeTitle.textContent = '🚀 复杂任务模式已启用';
+                welcomeDesc.textContent = '我会将复杂任务自动分解为多个子任务，并行执行，智能整合结果';
+                modeHint.style.display = 'none';  // 隐藏模式切换提示
+            }
         }
 
         // 检查当前会话是否有复杂任务
@@ -905,6 +1159,9 @@
                 console.log('✅ marked 库已加载');
             }
             
+            // 初始化欢迎文本
+            updateWelcomeText(currentMode);
+            
             await loadSessions();
             document.getElementById('messageInput').focus();
         });
@@ -1039,6 +1296,139 @@
                 console.error('删除会话失败:', error);
             }
         }
+
+        // 使用示例（点击能力卡片或资讯）
+        function useExample(exampleText, mode = 'normal') {
+            const input = document.getElementById('messageInput');
+            input.value = exampleText;
+            input.focus();
+            autoResize(input);
+            
+            // 如果需要切换模式
+            if (mode === 'complex' && currentMode !== 'complex') {
+                switchMode('complex');
+            } else if (mode === 'normal' && currentMode !== 'normal') {
+                switchMode('normal');
+            }
+        }
+
+        // 资讯数据
+        const newsTemplates = [
+            {
+                category: 'AI 技术',
+                headline: 'GPT-5 发布，多模态能力大幅提升',
+                summary: 'OpenAI 发布 GPT-5，支持图像、视频、文本的统一理解，性能较 GPT-4 提升显著。',
+                action: '了解更多',
+                query: '请帮我搜索 GPT-5 的最新消息和主要改进',
+                mode: 'normal'  // 普通模式
+            },
+            {
+                category: '行业动态',
+                headline: '2024 年全球 AI 市场规模突破 5000 亿美元',
+                summary: '根据最新报告，全球 AI 市场持续增长，企业级应用成为主要驱动力。',
+                action: '查看详情',
+                query: '请帮我分析 2024 年 AI 市场的发展状况和未来趋势',
+                mode: 'complex'  // 复杂模式（需要多维度分析）
+            },
+            {
+                category: '技术教程',
+                headline: 'Python 异步编程最佳实践',
+                summary: '掌握 asyncio 和 async/await 语法，提升 Python 应用的并发性能。',
+                action: '学习教程',
+                query: '请帮我搜索 Python 异步编程的最佳实践和常见模式',
+                mode: 'normal'
+            },
+            {
+                category: '数据分析',
+                headline: '数据可视化：从入门到精通',
+                summary: '学习如何使用 Python 的 Matplotlib、Seaborn 和 Plotly 创建专业的数据可视化。',
+                action: '开始学习',
+                query: '请帮我总结 Python 数据可视化的常用工具和技巧',
+                mode: 'normal'
+            },
+            {
+                category: '网络安全',
+                headline: '2024 年最常见的网络安全威胁',
+                summary: '了解当前最主要的网络安全威胁，包括钓鱼攻击、勒索软件等，以及如何防范。',
+                action: '了解防范',
+                query: '请帮我搜索 2024 年最主要的网络安全威胁和防护措施',
+                mode: 'normal'
+            },
+            {
+                category: '云计算',
+                headline: 'Serverless 架构的优势与挑战',
+                summary: 'Serverless 计算正在改变应用开发方式，但也带来了新的调试和监控挑战。',
+                action: '深入探讨',
+                query: '请帮我分析 Serverless 架构的优缺点和适用场景',
+                mode: 'complex'  // 复杂模式（需要对比分析）
+            },
+            {
+                category: '编程工具',
+                headline: 'VS Code 2024 年度最佳扩展推荐',
+                summary: '精选 10 个提升开发效率的 VS Code 扩展，涵盖代码质量、调试、Git 等多个方面。',
+                action: '查看推荐',
+                query: '请帮我搜索 VS Code 2024 年最受欢迎的扩展插件',
+                mode: 'normal'
+            },
+            {
+                category: '机器学习',
+                headline: 'Transformer 模型架构详解',
+                summary: '深入理解 Transformer 的自注意力机制，这是现代 NLP 和大语言模型的核心。',
+                action: '学习原理',
+                query: '请帮我解释 Transformer 模型的工作原理和核心组件',
+                mode: 'normal'
+            }
+        ];
+
+        let currentNewsIndex = 0;
+        const newsPerBatch = 3; // 每批显示 3 条资讯
+
+        // 渲染资讯
+        function renderNews() {
+            const newsGrid = document.getElementById('newsGrid');
+            newsGrid.innerHTML = '';
+
+            // 获取当前批次的资讯
+            for (let i = 0; i < newsPerBatch; i++) {
+                const news = newsTemplates[(currentNewsIndex + i) % newsTemplates.length];
+                
+                const newsCard = document.createElement('div');
+                newsCard.className = 'news-card';
+                // 传递 mode 参数，自动切换模式
+                newsCard.onclick = () => useExample(news.query, news.mode || 'normal');
+                
+                // 复杂模式添加角标
+                const badge = news.mode === 'complex' ? '<div class="news-badge">🎯 复杂任务</div>' : '';
+                
+                newsCard.innerHTML = `
+                    ${badge}
+                    <div class="news-category">${news.category}</div>
+                    <div class="news-headline">${news.headline}</div>
+                    <div class="news-summary">${news.summary}</div>
+                    <div class="news-meta">
+                        <span>${getRelativeTime(i)}</span>
+                        <span class="news-action">${news.action} →</span>
+                    </div>
+                `;
+                
+                newsGrid.appendChild(newsCard);
+            }
+        }
+
+        // 刷新资讯
+        function refreshNews() {
+            currentNewsIndex = (currentNewsIndex + newsPerBatch) % newsTemplates.length;
+            renderNews();
+        }
+
+        // 获取相对时间（模拟）
+        function getRelativeTime(index) {
+            const times = ['刚刚', '5分钟前', '10分钟前', '15分钟前', '20分钟前', '30分钟前'];
+            return times[index % times.length];
+        }
+
+        // 页面加载时渲染资讯
+        document.addEventListener('DOMContentLoaded', renderNews);
 
         // 发送消息（流式）
         async function sendMessage() {
