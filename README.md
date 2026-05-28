@@ -480,26 +480,16 @@ grep "工具调用" logs/agent.log
 
 ---
 
-## 📄 许可证
 
-MIT License - 详见 [LICENSE](LICENSE) 文件
 
----
+## 🙏 技术参考
 
-## 🙏 致谢
+本项目在开发过程中参考了以下开源项目的优秀设计理念:
 
-- [LangChain](https://github.com/langchain-ai/langchain) - LLM 应用开发框架
-- [LangGraph](https://github.com/langchain-ai/langgraph) - 状态图编排框架
-- [FastAPI](https://github.com/tiangolo/fastapi) - 现代 Web 框架
-- [DeerFlow](https://github.com/antgroup/deerflow) - 多 Agent 协作灵感来源
-
----
-
-## 📬 联系方式
-
-- **Author**: Your Name
-- **Email**: your.email@example.com
-- **GitHub**: [@YOUR_USERNAME](https://github.com/YOUR_USERNAME)
+- **LangChain** - LLM 应用开发框架
+- **LangGraph** - 状态图编排框架
+- **FastAPI** - 现代 Web 框架
+- **Agent Skills 规范** - 插件化技能系统设计
 
 ---
 
