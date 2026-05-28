@@ -1,0 +1,184 @@
+<!-- ========================================
+     My Agent - HTML 结构
+     ======================================== -->
+
+<!-- 侧边栏切换按钮（移动端） -->
+<button class="sidebar-toggle" onclick="toggleSidebar()">☰</button>
+
+<div class="app-container">
+    <!-- 侧边栏 -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <button class="new-chat-btn" onclick="createNewSession()">
+                <span>＋</span>
+                <span>新对话</span>
+            </button>
+            
+            <!-- 侧边栏 Tab 切换 -->
+            <div class="sidebar-tabs">
+                <button class="sidebar-tab active" onclick="switchSidebarTab('chat')" id="tabChat">
+                    <span>💬</span> 对话
+                </button>
+                <button class="sidebar-tab" onclick="switchSidebarTab('industry')" id="tabIndustry">
+                    <span>📊</span> 产业链
+                </button>
+            </div>
+        </div>
+        
+        <!-- 会话列表面板 -->
+        <div class="sidebar-panel active" id="panelChat">
+            <div class="session-list" id="sessionList">
+                <!-- 会话列表动态生成 -->
+            </div>
+        </div>
+        
+        <!-- 产业链列表面板 -->
+        <div class="sidebar-panel" id="panelIndustry">
+            <div class="industry-panel">
+                <div class="industry-search">
+                    <input type="text" id="industrySearchInput" placeholder="搜索产业链..." 
+                           onkeydown="if(event.key==='Enter') searchIndustry()">
+                    <button onclick="searchIndustry()">🔍</button>
+                </div>
+                <div class="industry-list" id="industryList">
+                    <div class="loading-text">加载中...</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 用户信息和退出按钮（左下角） -->
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <span id="currentUser" class="username"></span>
+                <button onclick="logout()" class="logout-btn">
+                    <span class="logout-icon">🚪</span>
+                    <span>退出</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="main-content">
+        <!-- 对话界面 -->
+        <div id="chatView" class="content-view active">
+            <div class="chat-header">
+                <div class="header-left">
+                    <h2 id="chatTitle">新对话</h2>
+
+                    <!-- 模式切换器 -->
+                    <div class="mode-switcher">
+                        <button class="mode-btn active" onclick="switchMode('normal')" id="modeNormal">
+                            <span class="mode-icon">💬</span>普通对话
+                        </button>
+                        <button class="mode-btn" onclick="switchMode('complex')" id="modeComplex">
+                            <span class="mode-icon">🚀</span>复杂任务
+                        </button>
+                        <button class="mode-btn" onclick="toggleSubtaskPanel()" id="modeSubtask" style="display:none;">
+                            <span class="mode-icon">📋</span>子任务
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-container" id="chatContainer">
+                <div class="empty-state">
+                    <div class="empty-state-icon">🦌</div>
+                    <h3 id="welcomeTitle">你好！我是你的 AI 助手</h3>
+                    <p id="welcomeDesc">我可以帮你分析网页、处理数据、搜索信息，完成各种复杂任务</p>
+                    
+                    <!-- 模式切换提示（仅在普通模式显示） -->
+                    <div class="mode-hint" id="modeHint">
+                        <span class="mode-hint-icon">💡</span>
+                        <span class="mode-hint-text">如果有复杂任务（多维度分析、对比研究等），可以切换到</span>
+                        <button class="mode-hint-btn" onclick="switchMode('complex')">🚀 复杂模式</button>
+                    </div>
+                                        
+                    <!-- 资讯区域 -->
+                    <div class="news-section">
+                        <div class="news-header">
+                            <div class="news-title">
+                                <span>📰</span>
+                                <span>今日资讯</span>
+                            </div>
+                            <button class="news-refresh" onclick="refreshNews()">
+                                🔄 换一批
+                            </button>
+                        </div>
+                        <div class="news-grid" id="newsGrid">
+                            <!-- 资讯卡片将通过 JavaScript 动态生成 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-container">
+                <div class="input-wrapper">
+                    <textarea
+                        id="messageInput"
+                        placeholder="输入消息...（Ctrl+Enter 发送）"
+                        rows="1"
+                        oninput="autoResize(this)"
+                        onkeydown="handleKeyDown(event)"
+                    ></textarea>
+                </div>
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                    发送
+                </button>
+            </div>
+        </div>
+        
+        <!-- 产业链界面 -->
+        <div id="industryView" class="content-view">
+            <div class="industry-main-header">
+                <h2>📊 产业链图谱</h2>
+                <div class="industry-main-stats" id="industryMainStats">
+                    选择一个产业链查看详细信息
+                </div>
+            </div>
+            
+            <div class="industry-main-content">
+                <div class="industry-main-placeholder" id="industryPlaceholder">
+                    <div class="placeholder-icon">📊</div>
+                    <h3>产业链图谱可视化</h3>
+                    <p>在左侧选择一个产业链，即可查看完整的产业链图谱</p>
+                    <div class="quick-access">
+                        <p>快速访问：</p>
+                        <div class="quick-chips" id="quickChips">
+                            <!-- 动态生成常用产业链 -->
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="industry-graph-full" id="industryGraphFull" style="display:none;">
+                    <div class="industry-graph-container">
+                        <div class="industry-graph-header">
+                            <span>📊</span>
+                            <span id="industryFullTitle">产业链图谱</span>
+                        </div>
+                        <div id="industryFullChart" class="industry-graph-chart-full"></div>
+                        <div class="industry-graph-footer">
+                            <span id="industryFullStats">节点: 0 | 关系: 0</span>
+                            <span>💡 支持拖拽、缩放、点击节点查看详情</span>
+                        </div>
+                    </div>
+                    
+                    <div class="industry-description" id="industryDescription" style="display:none;">
+                        <!-- 产业链文字描述 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 子任务面板 -->
+<div class="subtask-panel" id="subtaskPanel">
+    <div class="subtask-panel-header">
+        <h3>📋 子任务详情</h3>
+        <button class="close-panel-btn" onclick="toggleSubtaskPanel()">×</button>
+    </div>
+    <div id="subtaskList">
+        <p style="color: #999; text-align: center; padding: 40px 0;">暂无子任务</p>
+    </div>
+</div>

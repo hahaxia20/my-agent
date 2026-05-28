@@ -203,6 +203,9 @@ class MyAgent:
         self.tools = self._init_tools()
         self.checkpointer = self._init_checkpointer() if self.config.enable_checkpoint else None
         
+        # 初始化产业链图谱工具（如果 Neo4j 可用）
+        self._init_industry_graph_tools()
+        
         # 初始化 Sub-Agent 编排器
         self.sub_agent_orchestrator = self._init_sub_agent_orchestrator()
         
@@ -261,9 +264,9 @@ class MyAgent:
             try:
                 langchain_tool = self._convert_to_langchain_tool(tool)
                 tools.append(langchain_tool)
-                logger.info(f"✅ 注册工具: {tool.name} (类型: {self._get_tool_type(tool)})")
+                logger.info(f"✅ 注册工具: {tool.name} (类型: {self._get_tool_type(tool)}, has_schema: {hasattr(langchain_tool, 'args_schema')})")
             except Exception as e:
-                logger.error(f"❌ 注册工具失败 {tool.name}: {e}")
+                logger.error(f" 注册工具失败 {tool.name}: {e}", exc_info=True)
 
         # 注意: Skill 不再转换为工具，而是通过 SkillMiddleware 提供
         return tools
@@ -296,11 +299,41 @@ class MyAgent:
                 logger.debug(f"执行异步工具 {tool_name}, kwargs: {kwargs}")
                 return await tool.execute(**kwargs)
 
-            return StructuredTool(
+            # 如果有 parameters，创建 args_schema
+            args_schema = None
+            if hasattr(tool, 'parameters') and tool.parameters:
+                from pydantic import create_model, Field
+                from typing import Optional
+                
+                fields = {}
+                for param_name, param_info in tool.parameters.get('properties', {}).items():
+                    field_type = str
+                    if param_info.get('type') == 'integer':
+                        field_type = int
+                    elif param_info.get('type') == 'number':
+                        field_type = float
+                    elif param_info.get('type') == 'boolean':
+                        field_type = bool
+                    
+                    is_required = param_name in tool.parameters.get('required', [])
+                    if is_required:
+                        fields[param_name] = (field_type, Field(description=param_info.get('description', '')))
+                    else:
+                        fields[param_name] = (Optional[field_type], Field(default=None, description=param_info.get('description', '')))
+                
+                if fields:
+                    args_schema = create_model(f"{tool_name.title()}Schema", **fields)
+                    logger.debug(f"为工具 {tool_name} 创建 args_schema: {list(fields.keys())}")
+
+            structured_tool = StructuredTool(
                 name=tool_name,
                 description=tool.description,
                 coroutine=logged_execute,
+                args_schema=args_schema
             )
+            
+            logger.debug(f"工具 {tool_name}: name={structured_tool.name}, has_args_schema={structured_tool.args_schema is not None}")
+            return structured_tool
         
         # 同步工具
         elif hasattr(tool, 'execute'):
@@ -309,11 +342,41 @@ class MyAgent:
                 logger.debug(f"执行同步工具 {tool_name}, kwargs: {kwargs}")
                 return tool.execute(**kwargs)
 
-            return StructuredTool(
+            # 如果有 parameters，创建 args_schema
+            args_schema = None
+            if hasattr(tool, 'parameters') and tool.parameters:
+                from pydantic import create_model, Field
+                from typing import Optional
+                
+                fields = {}
+                for param_name, param_info in tool.parameters.get('properties', {}).items():
+                    field_type = str
+                    if param_info.get('type') == 'integer':
+                        field_type = int
+                    elif param_info.get('type') == 'number':
+                        field_type = float
+                    elif param_info.get('type') == 'boolean':
+                        field_type = bool
+                    
+                    is_required = param_name in tool.parameters.get('required', [])
+                    if is_required:
+                        fields[param_name] = (field_type, Field(description=param_info.get('description', '')))
+                    else:
+                        fields[param_name] = (Optional[field_type], Field(default=None, description=param_info.get('description', '')))
+                
+                if fields:
+                    args_schema = create_model(f"{tool_name.title()}Schema", **fields)
+                    logger.debug(f"为工具 {tool_name} 创建 args_schema: {list(fields.keys())}")
+
+            structured_tool = StructuredTool(
                 name=tool_name,
                 description=tool.description,
-                func=logged_execute
+                func=logged_execute,
+                args_schema=args_schema
             )
+            
+            logger.debug(f"工具 {tool_name}: name={structured_tool.name}, has_args_schema={structured_tool.args_schema is not None}")
+            return structured_tool
         else:
             raise ValueError(f"工具 {tool_name} 没有 execute 方法")
 
@@ -345,6 +408,35 @@ class MyAgent:
         except Exception as e:
             logger.warning(f"检查点初始化失败，将使用内存存储: {e}")
             return None
+
+    def _init_industry_graph_tools(self):
+        """初始化产业链图谱工具（Neo4j）"""
+        try:
+            from src.tools.industry_graph import (
+                QueryIndustryChainTool,
+                ListIndustryChainsTool,
+                FindUpstreamTool
+            )
+            
+            # 注册图谱工具
+            graph_tools = [
+                QueryIndustryChainTool(),
+                ListIndustryChainsTool(),
+                FindUpstreamTool()
+            ]
+            
+            for tool in graph_tools:
+                self.tool_manager.register(tool)
+                # 转换为 LangChain 工具
+                langchain_tool = self._convert_to_langchain_tool(tool)
+                self.tools.append(langchain_tool)
+                logger.info(f"✅ 注册图谱工具: {tool.name}")
+            
+            logger.info(f"📊 产业链图谱工具已加载 ({len(graph_tools)} 个)")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ 产业链图谱工具加载失败（Neo4j 可能未启动）: {e}")
+            logger.warning("💡 提示：启动 Neo4j 后可自动启用图谱功能")
 
     def _get_system_prompt(self) -> str:
         """获取系统提示词 (通过 system_prompt_context_manager 统一管理)"""
