@@ -23,6 +23,13 @@
 - **多轮对话**: 支持连续对话,保持上下文一致性
 - **会话持久化**: MongoDB 存储,支持会话管理
 
+### 产业链图谱可视化
+- **ECharts 力导向图**: 交互式产业链关系图谱
+- **节点拖拽**: 自由拖拽节点，边自动跟随拉伸
+- **双Tab界面**: 对话与产业链独立Tab，职责分离
+- **对话联动**: 对话中识别产业链关键词，一键跳转图谱
+- **快捷入口**: 新建会话留白区域显示产业链快捷按钮
+
 ###  Sub-Agent 编排系统
 - **任务分解**: 自动将复杂任务拆分为多个子任务
 - **并行执行**: 支持子任务并发执行,提升效率
@@ -54,6 +61,7 @@
 
 - Python 3.10+
 - MongoDB 4.4+
+- Neo4j 5.x (可选，用于产业链图谱)
 - OpenAI API Key (或兼容的 LLM API)
 
 ### 安装步骤
@@ -88,6 +96,11 @@ MODEL_NAME=gpt-4o
 # MongoDB 配置
 MONGODB_URL=mongodb://localhost:27017
 MONGODB_DB=myagent
+
+# Neo4j 配置 (可选，用于产业链图谱)
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your-password
 
 # 搜索配置 (可选)
 TAVILY_API_KEY=your-tavily-key
@@ -244,6 +257,31 @@ GET /api/v1/sessions/{id}         # 获取会话详情
 DELETE /api/v1/sessions/{id}      # 删除会话
 ```
 
+### 产业链图谱
+
+```http
+GET /api/v1/industry/chains       # 获取所有产业链列表
+POST /api/v1/industry/query       # 查询产业链图谱
+Content-Type: application/json
+
+{
+  "industry": "氢能",
+  "include_codes": true
+}
+
+Response:
+{
+  "success": true,
+  "industry": "氢能",
+  "graph": {
+    "nodes": [...],
+    "edges": [...]
+  },
+  "stats": {...},
+  "description": "..."
+}
+```
+
 完整 API 文档请访问: http://localhost:8001/docs
 
 ---
@@ -334,6 +372,7 @@ python run.py
 
 ### 数据存储
 - **Database**: [MongoDB](https://www.mongodb.com/) 4.4+
+- **Graph Database**: [Neo4j](https://neo4j.com/) 5.x (产业链图谱)
 - **Driver**: Motor (异步) + PyMongo
 - **Checkpoint**: LangGraph MongoDB Checkpoint Saver
 
@@ -350,6 +389,7 @@ python run.py
 - **Vanilla JS**: 原生 JavaScript (无框架)
 - **SSE**: Server-Sent Events 流式传输
 - **Markdown**: marked.js 渲染
+- **可视化**: [ECharts](https://echarts.apache.org/) 5.4.3 (力导向图)
 
 ---
 
@@ -360,7 +400,7 @@ my-agent/
 ├── src/
 │   ├── api/                    # API 层
 │   │   ├── middleware/         # 中间件 (Auth, CORS)
-│   │   └── routes/             # 路由 (Chat, Auth, Complex Tasks)
+│   │   └── routes/             # 路由 (Chat, Auth, Complex Tasks, Industry)
 │   ├── core/                   # 核心业务逻辑
 │   │   ├── agent.py            # 主 Agent 实现
 │   │   ├── context/            # 上下文管理
@@ -371,17 +411,29 @@ my-agent/
 │   │   ├── web_search.py       # Web 搜索工具
 │   │   ├── web_scraper.py      # 网页抓取工具
 │   │   ├── calculator.py       # 计算器工具
-│   │   └── time.py             # 时间工具
+│   │   ├── time.py             # 时间工具
+│   │   ── industry_graph.py   # 产业链图谱工具 (Neo4j)
 │   ├── skills/                 # Skills 插件系统
 │   │   ├── manager.py          # Skill 管理器
 │   │   └── */SKILL.md          # Skill 定义文件
 │   ├── storage/                # 存储层
-│   │   └── mongodb.py          # MongoDB 连接管理
+│   │   ├── mongodb.py          # MongoDB 连接管理
+│   │   ── neo4j.py            # Neo4j 图谱数据库
 │   ├── config.py               # 配置管理
 │   └── main.py                 # 应用入口
+├── static/                     # 静态资源文件
+│   ├── css/                    # 样式文件
+│   │   ├── styles.css          # 主样式
+│   │   ── login.css           # 登录页样式
+│   └── js/                     # JavaScript 文件
+│       ├── app.js              # 应用入口
+│       ├── chat.js             # 对话功能
+│       ├── message.js          # 消息处理
+│       ├── industry.js         # 产业链功能
+│       ── utils.js            # 工具函数
 ├── tests/                      # 测试用例
 ├── logs/                       # 日志文件
-├── frontend.html               # 前端界面
+├── index.html                  # 主界面 (模块化拆分后)
 ├── login.html                  # 登录页面
 ├── run.py                      # 启动脚本
 ├── requirements.txt            # Python 依赖
