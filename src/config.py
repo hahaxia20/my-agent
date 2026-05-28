@@ -1,0 +1,182 @@
+"""
+配置管理模块
+"""
+
+from pydantic_settings import BaseSettings
+from functools import lru_cache
+from pathlib import Path
+from pydantic import BaseModel, Field
+
+# 获取项目根目录
+PROJECT_ROOT = Path(__file__).parent.parent
+
+class StreamConfig(BaseModel):
+    """流式配置"""
+    buffer_size: int = Field(default=5, description="缓冲区大小")
+    flush_interval: float = Field(default=0.05, description="刷新间隔(秒)")
+    enable_metrics: bool = Field(default=True, description="启用性能监控")
+    enable_debug_info: bool = Field(default=False, description="启用调试信息")
+    max_chunk_size: int = Field(default=4096, description="最大块大小")
+    client_timeout: int = Field(default=300, description="客户端超时(秒)")
+
+
+class ConversationContextConfig(BaseModel):
+    """对话上下文管理配置"""
+    # 基础限制
+    max_messages: int = Field(default=50, description="最大消息数量")
+    max_tokens: int = Field(default=8000, description="最大 token 数量")
+    
+    # 摘要压缩配置
+    enable_compression: bool = Field(default=False, description="启用上下文压缩")
+    keep_recent_messages: int = Field(default=20, description="保留最近的消息数量")
+    
+    # AI 摘要配置
+    enable_ai_summary: bool = Field(default=True, description="启用 AI 智能摘要")
+    summary_max_length: int = Field(default=200, description="摘要最大长度(字符)")
+    
+    # Token 估算配置
+    chinese_token_ratio: float = Field(default=1.5, description="中文字符 token 比例")
+    english_token_ratio: float = Field(default=0.75, description="英文字符 token 比例")
+
+class Settings(BaseSettings):
+    """应用配置"""
+
+    # ═══════════════════════════════════════
+    # 应用基础配置
+    # ═══════════════════════════════════════
+    APP_ENV: str = "development"
+    APP_NAME: str = "My Agent"
+    APP_VERSION: str = "1.0.0"
+    DEBUG: bool = True
+
+    API_HOST: str = "0.0.0.0"
+    API_PORT: int = 8001
+    API_PREFIX: str = "/api/v1"
+
+    # ═══════════════════════════════════════
+    # LLM 配置
+    # ═══════════════════════════════════════
+    OPENAI_API_KEY: str
+    API_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    MODEL_NAME: str = "qwen-plus"
+    MAX_TOKENS: int = 4096
+    TEMPERATURE: float = 0.7
+
+    # ═══════════════════════════════════════
+    # MongoDB 配置
+    # ═══════════════════════════════════════
+    MONGODB_URL: str = "mongodb://localhost:27017"
+    MONGODB_DB: str = "deerflow"
+
+    # ═══════════════════════════════════════
+    # 上下文管理配置（混合策略）
+    # ═══════════════════════════════════════
+    CONTEXT_MAX_TOKENS: int = 4096
+    CONTEXT_MIN_RECENT: int = 5
+    CONTEXT_MAX_RECENT: int = 20
+    CONTEXT_ENABLE_IMPORTANCE: bool = True
+    CONTEXT_ENABLE_RELEVANCE: bool = True
+    CONTEXT_RELEVANCE_THRESHOLD: float = 0.3
+
+    # ═══════════════════════════════════════
+    # CORS 配置
+    # ═══════════════════════════════════════
+    # 开发环境: ["*"] 允许所有来源
+    # 生产环境: ["https://yourdomain.com"] 明确指定允许的域名
+    CORS_ORIGINS: list[str] = ["*"]
+
+    # ═══════════════════════════════════════
+    # 搜索工具配置
+    # ═══════════════════════════════════════
+    TAVILY_API_KEY: str = ""
+
+    # ═══════════════════════════════════════
+    # JWT密钥配置
+    # ═══════════════════════════════════════
+    JWT_SECRET_KEY: str = ""
+
+    # ══════════════════════════════════════
+    # 系统提示词配置
+    # ═══════════════════════════════════════
+    SYSTEM_PROMPT_VERSION: str = "1.0"  # 提示词版本号，对应文件名 system_prompts_v{version}.json
+
+    # ═══════════════════════════════════════
+    # 对话上下文管理配置（扁平化，支持环境变量）
+    # ═══════════════════════════════════════
+    # 基础限制
+    CONV_CTX_MAX_MESSAGES: int = 50
+    CONV_CTX_MAX_TOKENS: int = 8000
+    
+    # 摘要压缩配置
+    CONV_CTX_ENABLE_COMPRESSION: bool = False
+    CONV_CTX_KEEP_RECENT_MESSAGES: int = 20
+    
+    # AI 摘要配置
+    CONV_CTX_ENABLE_AI_SUMMARY: bool = True
+    CONV_CTX_SUMMARY_MAX_LENGTH: int = 200
+    
+    # Token 估算配置
+    CONV_CTX_CHINESE_TOKEN_RATIO: float = 1.5
+    CONV_CTX_ENGLISH_TOKEN_RATIO: float = 0.75
+
+    stream: StreamConfig = Field(default_factory=StreamConfig)
+
+    class Config:
+        env_file = str(PROJECT_ROOT / ".env")
+        env_file_encoding = "utf-8"
+        case_sensitive = True
+
+    # model_config = {
+    #     "env_file": str(PROJECT_ROOT / ".env"),
+    #     "env_file_encoding": "utf-8",
+    #     "extra": "ignore"
+    # }
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    """获取配置（缓存）"""
+    return Settings()
+
+
+_settings = None
+
+def get_settings_safe() -> Settings:
+    """安全地获取配置"""
+    global _settings
+    if _settings is None:
+        _settings = get_settings()
+    return _settings
+
+
+def validate_config() -> bool:
+    """验证配置"""
+    try:
+        s = get_settings_safe()
+        if not s.OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY 未设置")
+        return True
+    except Exception as e:
+        print(f"❌ 配置验证失败: {e}")
+        return False
+
+
+def print_config_summary():
+    """打印配置摘要"""
+    s = get_settings_safe()
+    print("\n" + "="*50)
+    print("📋 配置摘要")
+    print("="*50)
+    print(f"  环境: {'生产' if not s.DEBUG else '开发'}")
+    print(f"  模型: {s.MODEL_NAME}")
+    print(f"  API: {s.API_BASE_URL}")
+    print(f"  API Key: {s.OPENAI_API_KEY[:10]}...{s.OPENAI_API_KEY[-4:]}")
+    print(f"  MongoDB: {s.MONGODB_URL}")
+    print(f"  上下文: {s.CONTEXT_MAX_TOKENS} tokens")
+    print(f"  提示词版本: v{s.SYSTEM_PROMPT_VERSION}")
+    print(f"  对话上下文:")
+    print(f"    - 最大消息数: {s.CONV_CTX_MAX_MESSAGES}")
+    print(f"    - 最大 Token: {s.CONV_CTX_MAX_TOKENS}")
+    print(f"    - 启用压缩: {s.CONV_CTX_ENABLE_COMPRESSION}")
+    print(f"    - AI 摘要: {s.CONV_CTX_ENABLE_AI_SUMMARY}")
+    print("="*50 + "\n")

@@ -1,0 +1,1493 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Agent</title>
+    <!-- Markdown 渲染库 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f5f5;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* 侧边栏 */
+        .sidebar {
+            width: 280px;
+            background: #fff;
+            border-right: 1px solid #e5e5e5;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid #e5e5e5;
+        }
+
+        .new-chat-btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .new-chat-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .session-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .session-item {
+            padding: 12px 15px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            position: relative;
+            gap: 8px;
+        }
+
+        .session-item:hover {
+            background: #f0f0f0;
+        }
+
+        .session-item.active {
+            background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+            border: 1px solid #667eea30;
+        }
+
+        .session-info {
+            flex: 1;
+            min-width: 0; /* 允许 flex 子元素缩小 */
+            overflow: hidden; /* 隐藏溢出内容 */
+        }
+
+        .session-title {
+            font-size: 14px;
+            color: #333;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            display: block; /* 确保是块级元素 */
+        }
+
+        .session-time {
+            font-size: 11px;
+            color: #999;
+            margin-top: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .session-delete {
+            width: 28px;
+            height: 28px;
+            min-width: 28px; /* 确保最小宽度 */
+            padding: 0;
+            background: transparent;
+            border: none;
+            color: #999;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .session-delete:hover {
+            background: #ff4444;
+            color: white;
+        }
+
+        .session-time {
+            font-size: 11px;
+            color: #999;
+            margin-top: 4px;
+        }
+
+        /* 主聊天区 */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #fff;
+        }
+
+        .chat-header {
+            padding: 20px 30px;
+            border-bottom: 1px solid #e5e5e5;
+            background: #fff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            flex: 1;
+        }
+
+        .chat-header h2 {
+            font-size: 18px;
+            color: #333;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        /* 用户信息区域 */
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 16px;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }
+
+        .username {
+            font-size: 14px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .logout-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .logout-btn:hover {
+            background: #cc0000;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(255, 68, 68, 0.3);
+        }
+
+        .logout-icon {
+            font-size: 14px;
+        }
+
+        /* 模式切换器 */
+        .mode-switcher {
+            display: flex;
+            gap: 8px;
+        }
+
+        .mode-btn {
+            padding: 6px 16px;
+            border: 2px solid #e5e5e5;
+            background: white;
+            border-radius: 20px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .mode-btn:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        .mode-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: #667eea;
+            color: white;
+        }
+
+        .mode-btn .mode-icon {
+            margin-right: 4px;
+        }
+
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px;
+            background: #fafafa;
+        }
+
+        .message {
+            margin-bottom: 25px;
+            display: flex;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+
+        .message.assistant {
+            justify-content: flex-start;
+        }
+
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            margin: 0 12px;
+            flex-shrink: 0;
+        }
+
+        .message.user .avatar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .message.assistant .avatar {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 12px 18px;
+            border-radius: 12px;
+            line-height: 1.6;
+            word-wrap: break-word;
+            font-size: 14px;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .message.assistant .message-content {
+            background: white;
+            color: #333;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            position: relative;
+        }
+
+        /* 子任务按钮 */
+        .view-subtasks-btn {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 16px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+            transition: transform 0.2s;
+        }
+
+        .view-subtasks-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .message.assistant:hover .view-subtasks-btn {
+            display: flex;
+        }
+
+        /* Markdown 样式 */
+        .message.assistant .message-content h1,
+        .message.assistant .message-content h2,
+        .message.assistant .message-content h3,
+        .message.assistant .message-content h4 {
+            margin: 16px 0 8px 0;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .message.assistant .message-content h1 { font-size: 20px; }
+        .message.assistant .message-content h2 { font-size: 18px; }
+        .message.assistant .message-content h3 { font-size: 16px; }
+
+        .message.assistant .message-content p {
+            margin: 8px 0;
+            line-height: 1.6;
+        }
+
+        .message.assistant .message-content ul,
+        .message.assistant .message-content ol {
+            margin: 8px 0;
+            padding-left: 24px;
+        }
+
+        .message.assistant .message-content li {
+            margin: 4px 0;
+        }
+
+        .message.assistant .message-content strong {
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .message.assistant .message-content code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        .message.assistant .message-content pre {
+            background: #f5f5f5;
+            padding: 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 8px 0;
+        }
+
+        .message.assistant .message-content pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .message.assistant .message-content blockquote {
+            border-left: 4px solid #667eea;
+            padding-left: 12px;
+            margin: 8px 0;
+            color: #666;
+        }
+
+        .message.assistant .message-content hr {
+            border: none;
+            border-top: 1px solid #e5e5e5;
+            margin: 16px 0;
+        }
+
+        /* 流式光标动画 */
+        .message.assistant .message-content .cursor {
+            animation: blink 1s infinite;
+            color: #667eea;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        .input-container {
+            padding: 20px 30px;
+            background: white;
+            border-top: 1px solid #e5e5e5;
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .input-wrapper {
+            flex: 1;
+            position: relative;
+        }
+
+        .input-wrapper textarea {
+            width: 100%;
+            padding: 12px 18px;
+            border: 2px solid #e5e5e5;
+            border-radius: 12px;
+            font-size: 14px;
+            outline: none;
+            resize: none;
+            font-family: inherit;
+            min-height: 48px;
+            max-height: 120px;
+            transition: border-color 0.3s;
+        }
+
+        .input-wrapper textarea:focus {
+            border-color: #667eea;
+        }
+
+        .send-btn {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            height: 48px;
+        }
+
+        .send-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 子任务面板 */
+        .subtask-panel {
+            position: fixed;
+            right: -400px;
+            top: 0;
+            width: 400px;
+            height: 100vh;
+            background: white;
+            box-shadow: -2px 0 8px rgba(0,0,0,0.1);
+            transition: right 0.3s;
+            z-index: 1001;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .subtask-panel.open {
+            right: 0;
+        }
+
+        .subtask-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #e5e5e5;
+        }
+
+        .subtask-panel-header h3 {
+            font-size: 16px;
+            color: #333;
+        }
+
+        .close-panel-btn {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: #f5f5f5;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            color: #666;
+            transition: all 0.2s;
+        }
+
+        .close-panel-btn:hover {
+            background: #ff4444;
+            color: white;
+        }
+
+        .subtask-item {
+            padding: 12px;
+            margin-bottom: 12px;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+
+        .subtask-status {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .subtask-status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .subtask-status.running {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .subtask-status.failed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .subtask-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 6px;
+        }
+
+        .subtask-meta {
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 8px;
+        }
+
+        .subtask-preview {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.5;
+            max-height: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #999;
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
+        .empty-state h3 {
+            font-size: 24px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .empty-state p {
+            font-size: 14px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .sidebar-toggle {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+            padding: 8px 12px;
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                left: 0;
+                top: 0;
+                height: 100vh;
+                z-index: 999;
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+
+            .sidebar-toggle {
+                display: block;
+            }
+        }
+    </style>
+</head>
+<body>
+    <button class="sidebar-toggle" onclick="toggleSidebar()">☰</button>
+
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <button class="new-chat-btn" onclick="createNewSession()">
+                    <span>＋</span>
+                    <span>新对话</span>
+                </button>
+            </div>
+            <div class="session-list" id="sessionList">
+                <!-- 会话列表动态生成 -->
+            </div>
+        </div>
+
+        <!-- 主聊天区 -->
+        <div class="main-content">
+            <div class="chat-header">
+                <div class="header-left">
+                    <h2 id="chatTitle">新对话</h2>
+
+                    <!-- 模式切换器 -->
+                    <div class="mode-switcher">
+                        <button class="mode-btn active" onclick="switchMode('normal')" id="modeNormal">
+                            <span class="mode-icon">💬</span>普通对话
+                        </button>
+                        <button class="mode-btn" onclick="switchMode('complex')" id="modeComplex">
+                            <span class="mode-icon">🚀</span>复杂任务
+                        </button>
+                        <button class="mode-btn" onclick="toggleSubtaskPanel()" id="modeSubtask" style="display:none;">
+                            <span class="mode-icon">📋</span>子任务
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 用户信息和退出按钮（右上角） -->
+                <div class="user-info">
+                    <span id="currentUser" class="username"></span>
+                    <button onclick="logout()" class="logout-btn">
+                        <span class="logout-icon">🚪</span>
+                        <span>退出</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="chat-container" id="chatContainer">
+                <div class="empty-state">
+                    <div class="empty-state-icon">🦌</div>
+                    <h3>你好！我是你的 AI 助手</h3>
+                    <p>我可以帮你解答问题、分析数据、编写代码，或者完成各种复杂任务</p>
+                    <p style="margin-top: 12px; font-size: 13px; color: #999;">💡 提示：试试输入 "帮我分析一下最近的天气" 或 "写一个简单的 Python 程序"</p>
+                </div>
+            </div>
+
+            <div class="input-container">
+                <div class="input-wrapper">
+                    <textarea
+                        id="messageInput"
+                        placeholder="输入消息...（Ctrl+Enter 发送）"
+                        rows="1"
+                        oninput="autoResize(this)"
+                        onkeydown="handleKeyDown(event)"
+                    ></textarea>
+                </div>
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                    发送
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 子任务面板 -->
+    <div class="subtask-panel" id="subtaskPanel">
+        <div class="subtask-panel-header">
+            <h3>📋 子任务详情</h3>
+            <button class="close-panel-btn" onclick="toggleSubtaskPanel()">×</button>
+        </div>
+        <div id="subtaskList">
+            <p style="color: #999; text-align: center; padding: 40px 0;">暂无子任务</p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:8001';
+        let currentSessionId = null;
+        let sessions = [];
+        let currentMode = 'normal'; // 'normal' 或 'complex'
+        let lastComplexTaskResult = null; // 保存最近的复杂任务结果
+
+        // 切换模式
+        function switchMode(mode) {
+            currentMode = mode;
+            
+            // 更新按钮状态
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            if (mode === 'normal') {
+                document.getElementById('modeNormal').classList.add('active');
+                document.getElementById('modeSubtask').style.display = 'none';
+            } else if (mode === 'complex') {
+                document.getElementById('modeComplex').classList.add('active');
+                
+                // 检查当前会话是否有复杂任务消息
+                const hasComplexTask = checkCurrentSessionForComplexTasks();
+                
+                if (hasComplexTask || lastComplexTaskResult) {
+                    document.getElementById('modeSubtask').style.display = 'block';
+                } else {
+                    document.getElementById('modeSubtask').style.display = 'none';
+                }
+            }
+            
+            console.log(`切换到 ${mode} 模式`);
+        }
+
+        // 检查当前会话是否有复杂任务
+        function checkCurrentSessionForComplexTasks() {
+            const container = document.getElementById('chatContainer');
+            const messages = container.querySelectorAll('.message.assistant');
+            
+            for (const msg of messages) {
+                const contentDiv = msg.querySelector('.message-content');
+                if (contentDiv && contentDiv.dataset.subtasks) {
+                    return true;
+                }
+            }
+            
+            return false;
+        }
+
+        // 切换子任务面板
+        function toggleSubtaskPanel() {
+            const panel = document.getElementById('subtaskPanel');
+            panel.classList.toggle('open');
+            
+            if (panel.classList.contains('open')) {
+                // 优先使用 lastComplexTaskResult
+                if (lastComplexTaskResult) {
+                    renderSubtasks(lastComplexTaskResult);
+                } else {
+                    // 如果没有，查找最近一次的复杂任务消息
+                    const latestComplexTask = findLatestComplexTask();
+                    if (latestComplexTask) {
+                        renderSubtasks(latestComplexTask);
+                    } else {
+                        // 没有数据时显示提示
+                        document.getElementById('subtaskList').innerHTML = `
+                            <div style="text-align: center; padding: 40px 20px; color: #999;">
+                                <div style="font-size: 48px; margin-bottom: 16px;">📋</div>
+                                <p style="font-size: 16px; margin-bottom: 8px;">暂无子任务数据</p>
+                                <p style="font-size: 13px;">请先在“复杂任务”模式下执行一个任务</p>
+                            </div>
+                        `;
+                    }
+                }
+            }
+        }
+
+        // 查找最近一次的复杂任务
+        function findLatestComplexTask() {
+            const container = document.getElementById('chatContainer');
+            const messages = container.querySelectorAll('.message.assistant');
+            
+            // 从后往前找（最新的）
+            for (let i = messages.length - 1; i >= 0; i--) {
+                const contentDiv = messages[i].querySelector('.message-content');
+                if (contentDiv && contentDiv.dataset.subtasks) {
+                    try {
+                        const subtasks = JSON.parse(contentDiv.dataset.subtasks);
+                        return {
+                            sub_tasks: subtasks,
+                            duration: parseFloat(contentDiv.dataset.totalDuration) || 0,
+                            parallel_efficiency: parseFloat(contentDiv.dataset.parallelEfficiency) || 0
+                        };
+                    } catch (e) {
+                        console.error('解析子任务数据失败:', e);
+                    }
+                }
+            }
+            
+            return null;
+        }
+
+        // 渲染子任务列表
+        function renderSubtasks(result) {
+            const list = document.getElementById('subtaskList');
+                    
+            if (!result || !result.sub_tasks || result.sub_tasks.length === 0) {
+                list.innerHTML = '<p style="color: #999; text-align: center; padding: 40px 0;">暂无子任务</p>';
+                return;
+            }
+                    
+            list.innerHTML = result.sub_tasks.map((task, index) => {
+                const statusClass = task.status === 'completed' || task.status === 'success' ? 'success' : 
+                                   task.status === 'failed' ? 'failed' : 'running';
+                const statusText = task.status === 'completed' || task.status === 'success' ? '✅ 成功' : 
+                                  task.status === 'failed' ? '❌ 失败' : '⏳ 运行中';
+                        
+                // 使用 task_id 作为显示名称（因为后端没有返回 task_name）
+                const taskName = task.task_id || `子任务 ${index + 1}`;
+                        
+                return `
+                    <div class="subtask-item">
+                        <div class="subtask-status ${statusClass}">${statusText}</div>
+                        <div class="subtask-title">${taskName}</div>
+                        <div class="subtask-meta">
+                            ⏱️ ${(task.duration || 0).toFixed(1)}s | 📝 ${task.result_length || 0} 字符
+                        </div>
+                        <div class="subtask-preview">
+                            ${task.result_preview || '无预览'}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 显示指定消息的子任务
+        function showSubtasksForMessage(metadata) {
+            lastComplexTaskResult = {
+                sub_tasks: metadata.sub_tasks,
+                duration: metadata.total_duration,
+                parallel_efficiency: metadata.parallel_efficiency
+            };
+            
+            // 显示子任务按钮
+            document.getElementById('modeSubtask').style.display = 'block';
+            
+            // 切换到复杂任务模式
+            switchMode('complex');
+            
+            // 打开子任务面板
+            const panel = document.getElementById('subtaskPanel');
+            if (!panel.classList.contains('open')) {
+                panel.classList.add('open');
+            }
+            
+            // 渲染子任务
+            renderSubtasks(lastComplexTaskResult);
+        }
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', async () => {
+            // 检查 marked 是否加载
+            if (typeof marked === 'undefined') {
+                console.error('❌ marked 库未加载！');
+            } else {
+                console.log('✅ marked 库已加载');
+            }
+            
+            await loadSessions();
+            document.getElementById('messageInput').focus();
+        });
+
+
+        // 加载会话列表
+        async function loadSessions() {
+            try {
+                const token = localStorage.getItem('authToken');
+                const response = await fetch(`${API_BASE_URL}/api/v1/sessions`,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${token}`  // 添加这行
+                        }
+                    }
+                );
+
+                // 2. 如果后端返回 401，跳转登录页
+                if (response.status === 401) {
+                    window.location.href = 'login.html';
+                    return;
+                }
+
+
+                sessions = await response.json();
+                renderSessionList();
+            } catch (error) {
+                console.error('加载会话失败:', error);
+            }
+        }
+
+        // 渲染会话列表
+        function renderSessionList() {
+            const container = document.getElementById('sessionList');
+
+            if (sessions.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">暂无会话</div>';
+                return;
+            }
+
+            container.innerHTML = sessions.map(session => `
+                <div class="session-item ${session.session_id === currentSessionId ? 'active' : ''}"
+                     onclick="selectSession('${session.session_id}')">
+                    <div class="session-info">
+                        <div class="session-title">${session.title}</div>
+                        <div class="session-time">${formatTime(session.updated_at)}</div>
+                    </div>
+                    <button class="session-delete" onclick="event.stopPropagation(); deleteSession('${session.session_id}')" title="删除会话">
+                        ×
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        // 创建新会话
+        async function createNewSession() {
+            currentSessionId = null;
+            document.getElementById('chatTitle').textContent = '新对话';
+            document.getElementById('chatContainer').innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">🦌</div>
+                    <h3>开始新对话</h3>
+                    <p>输入消息开始聊天</p>
+                </div>
+            `;
+            renderSessionList();
+            document.getElementById('messageInput').focus();
+        }
+
+        // 选择会话
+        async function selectSession(sessionId) {
+            currentSessionId = sessionId;
+
+            try {
+                const token = localStorage.getItem('authToken');
+                const response = await fetch(`${API_BASE_URL}/api/v1/sessions/${sessionId}`,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${token}`  // 添加这行
+                        }
+                    });
+
+                // 2. 如果后端返回 401，跳转登录页
+                if (response.status === 401) {
+                    window.location.href = 'login.html';
+                    return;
+                }
+
+                const session = await response.json();
+
+                document.getElementById('chatTitle').textContent = session.title;
+
+                const container = document.getElementById('chatContainer');
+                container.innerHTML = '';
+
+                session.messages.forEach(msg => {
+                    addMessage(msg.role, msg.content, false, msg.metadata);
+                });
+
+                renderSessionList();
+                scrollToBottom();
+            } catch (error) {
+                console.error('加载会话失败:', error);
+            }
+        }
+
+        // 删除会话
+        async function deleteSession(sessionId) {
+            if (!confirm('确定要删除这个会话吗？')) return;
+
+            try {
+                const token = localStorage.getItem('authToken');
+                console.log('删除会话:', sessionId);
+                const response = await fetch(`${API_BASE_URL}/api/v1/sessions/${sessionId}`, {
+                    method: 'DELETE',
+                    headers: {
+                            'Authorization': `Bearer ${token}`  // 添加这行
+                        }
+                });
+
+                if (response.status === 401) {
+                    window.location.href = 'login.html';
+                    return;
+                }
+
+                if (currentSessionId === sessionId) {
+                    createNewSession();
+                }
+
+                await loadSessions();
+            } catch (error) {
+                console.error('删除会话失败:', error);
+            }
+        }
+
+        // 发送消息（流式）
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const sendBtn = document.getElementById('sendBtn');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            // 清空输入框
+            input.value = '';
+            input.style.height = 'auto';
+
+            // 显示用户消息
+            addMessage('user', message);
+
+            // 创建 AI 消息占位
+            const assistantDiv = addMessage('assistant', '', false);
+            const contentDiv = assistantDiv.querySelector('.message-content');
+            contentDiv.innerHTML = '<span style="color: #999;">正在思考中</span><span class="cursor">...</span>';  // 友好提示
+
+            // 禁用按钮
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<span class="loading"></span>';
+
+            try {
+                const token = localStorage.getItem('authToken');
+                
+                // 根据模式选择不同的 API
+                if (currentMode === 'complex') {
+                    // 复杂任务模式 - 非流式
+                    await sendComplexTask(message, contentDiv, sendBtn, token);
+                } else {
+                    // 普通对话模式 - 流式
+                    await sendNormalMessage(message, contentDiv, sendBtn, token);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                contentDiv.textContent = `❌ 出错了：${error.message}`;
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.innerHTML = '发送';
+                document.getElementById('messageInput').focus();
+            }
+        }
+
+        // 发送普通消息（流式）
+        async function sendNormalMessage(message, contentDiv, sendBtn, token) {
+            const response = await fetch(`${API_BASE_URL}/api/v1/chat/stream`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    message: message,
+                    session_id: currentSessionId
+                })
+            });
+
+            if (response.status === 401) {
+                window.location.href = 'login.html';
+                return;
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let fullText = '';
+            let sessionId = null;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+
+                        if (data.startsWith('__SESSION_ID__:')) {
+                            sessionId = data.replace('__SESSION_ID__:', '');
+                            if (!currentSessionId) {
+                                currentSessionId = sessionId;
+                                await loadSessions();
+                            }
+                        } else {
+                            fullText += data;
+                            if (typeof marked !== 'undefined') {
+                                const rendered = marked.parse(fullText);
+                                contentDiv.innerHTML = rendered + '<span class="cursor">▌</span>';
+                            } else {
+                                contentDiv.textContent = fullText + '▌';
+                            }
+                            scrollToBottom();
+                        }
+                    }
+                }
+            }
+
+            if (typeof marked !== 'undefined') {
+                contentDiv.innerHTML = marked.parse(fullText);
+            } else {
+                contentDiv.textContent = fullText;
+            }
+        }
+
+        // 发送复杂任务（流式）
+        async function sendComplexTask(message, contentDiv, sendBtn, token) {
+            contentDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">🚀 正在启动 Sub-Agent 编排系统...</div>';
+            
+            const response = await fetch(`${API_BASE_URL}/api/v1/complex-chat/stream`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    task: message,
+                    session_id: currentSessionId,
+                    decomposition_strategy: 'auto'
+                })
+            });
+
+            if (response.status === 401) {
+                window.location.href = 'login.html';
+                return;
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let subTasks = [];
+            let finalResult = null;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        
+                        if (data === '[DONE]') continue;
+                        
+                        try {
+                            const event = JSON.parse(data);
+                            
+                            // 根据不同事件类型更新 UI
+                            switch (event.type) {
+                                case 'decompose_start':
+                                    contentDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">🔪 正在分解任务...</div>';
+                                    break;
+                                    
+                                case 'decompose_complete':
+                                    const taskCount = event.data.sub_tasks_count;
+                                    contentDiv.innerHTML = `<div style="padding: 20px;">
+                                        <div style="margin-bottom: 12px; padding: 12px; background: #e3f2fd; border-radius: 8px;">
+                                            <strong>📋 任务分解完成</strong><br>
+                                            <span style="font-size: 13px; color: #666;">将分解为 ${taskCount} 个子任务并行执行</span>
+                                        </div>
+                                        <div id="subtaskProgress"></div>
+                                    </div>`;
+                                    break;
+                                    
+                                case 'execution_start':
+                                    // 开始执行子任务
+                                    break;
+                                    
+                                case 'subtask_start':
+                                    // 添加子任务到列表
+                                    subTasks.push({
+                                        id: event.data.task_id,
+                                        name: event.data.task_name,
+                                        status: 'running',
+                                        duration: 0,
+                                        result_length: 0
+                                    });
+                                    renderSubtaskProgress(contentDiv, subTasks);
+                                    break;
+                                    
+                                case 'subtask_complete':
+                                    // 更新子任务状态
+                                    const task = subTasks.find(t => t.id === event.data.task_id);
+                                    if (task) {
+                                        task.status = 'success';
+                                        task.duration = event.data.duration;
+                                        task.result_length = event.data.result_length;
+                                    }
+                                    renderSubtaskProgress(contentDiv, subTasks);
+                                    break;
+                                    
+                                case 'subtask_failed':
+                                    // 更新子任务为失败
+                                    const failedTask = subTasks.find(t => t.id === event.data.task_id);
+                                    if (failedTask) {
+                                        failedTask.status = 'failed';
+                                        failedTask.error = event.data.error;
+                                    }
+                                    renderSubtaskProgress(contentDiv, subTasks);
+                                    break;
+                                    
+                                case 'execution_complete':
+                                    contentDiv.innerHTML += `<div style="margin-top: 12px; padding: 12px; background: #fff3e0; border-radius: 8px;">
+                                        <strong>✅ 所有子任务执行完成</strong><br>
+                                        <span style="font-size: 13px; color: #666;">成功: ${event.data.success_count}/${event.data.total_count}</span>
+                                    </div>`;
+                                    break;
+                                    
+                                case 'synthesis_start':
+                                    contentDiv.innerHTML += '<div style="margin-top: 12px; padding: 12px; background: #f3e5f5; border-radius: 8px; color: #666;">🔗 正在合成最终结果...</div>';
+                                    break;
+                                    
+                                case 'synthesis_complete':
+                                    contentDiv.innerHTML += `<div style="margin-top: 12px; padding: 12px; background: #e8f5e9; border-radius: 8px; color: #666;">✅ 结果合成完成 (${event.data.result_length} 字符)</div>`;
+                                    break;
+                                    
+                                case 'final_result':
+                                    finalResult = event.data;
+                                    
+                                    // 保存复杂任务结果
+                                    lastComplexTaskResult = {
+                                        sub_tasks: finalResult.sub_tasks,
+                                        duration: finalResult.duration,
+                                        parallel_efficiency: finalResult.parallel_efficiency
+                                    };
+                                    
+                                    // 显示子任务按钮
+                                    document.getElementById('modeSubtask').style.display = 'block';
+                                    
+                                    // 渲染最终结果
+                                    let html = `<div style="padding: 10px 0;">`;
+                                    html += `<div style="margin-bottom: 16px; padding: 12px; background: #f0f8ff; border-radius: 8px; border-left: 4px solid #667eea;">`;
+                                    html += `<strong>🚀 Sub-Agent 编排结果</strong><br>`;
+                                    html += `<span style="font-size: 13px; color: #666;">`;
+                                    html += `⏱️ 总耗时: ${finalResult.duration.toFixed(1)}s | `;
+                                    html += `📊 子任务: ${finalResult.sub_tasks.length} | `;
+                                    html += `✅ 成功: ${finalResult.sub_tasks.filter(t => t.status === 'success').length} | `;
+                                    html += `⚡ 并行效率: ${(finalResult.parallel_efficiency * 100).toFixed(1)}%`;
+                                    html += `</span></div>`;
+                                    
+                                    // 渲染 Markdown 内容
+                                    if (typeof marked !== 'undefined') {
+                                        html += marked.parse(finalResult.reply);
+                                    } else {
+                                        html += `<pre>${finalResult.reply}</pre>`;
+                                    }
+                                    
+                                    html += `</div>`;
+                                    contentDiv.innerHTML = html;
+                                    
+                                    // 更新会话 ID
+                                    if (finalResult.session_id && !currentSessionId) {
+                                        currentSessionId = finalResult.session_id;
+                                        await loadSessions();
+                                    }
+                                    
+                                    scrollToBottom();
+                                    break;
+                                    
+                                case 'error':
+                                    contentDiv.textContent = `❌ 任务失败：${event.data.error}`;
+                                    break;
+                            }
+                        } catch (e) {
+                            console.error('解析 SSE 数据失败:', e);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 渲染子任务进度
+        function renderSubtaskProgress(contentDiv, subTasks) {
+            const progressDiv = contentDiv.querySelector('#subtaskProgress');
+            if (!progressDiv) return;
+            
+            progressDiv.innerHTML = subTasks.map(task => {
+                const statusIcon = task.status === 'running' ? '⏳' : 
+                                  task.status === 'success' ? '✅' : '❌';
+                const statusText = task.status === 'running' ? '执行中...' : 
+                                  task.status === 'success' ? `完成 (${task.duration.toFixed(1)}s)` : '失败';
+                
+                return `
+                    <div style="padding: 8px 12px; margin: 4px 0; background: white; border-radius: 6px; border-left: 3px solid ${task.status === 'running' ? '#ffc107' : task.status === 'success' ? '#4caf50' : '#f44336'};">
+                        <span style="margin-right: 8px;">${statusIcon}</span>
+                        <strong>${task.name}</strong>
+                        <span style="float: right; font-size: 12px; color: #999;">${statusText}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 修改 addMessage 函数，返回元素引用
+        function addMessage(role, content, scroll = true, metadata = null) {
+            const container = document.getElementById('chatContainer');
+
+            // 移除空状态
+            const emptyState = container.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+
+            const avatar = document.createElement('div');
+            avatar.className = 'avatar';
+            avatar.textContent = role === 'user' ? '👤' : '🤖';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            
+            // 如果是 AI 消息且有子任务元数据，添加查看按钮
+            if (role === 'assistant' && metadata && metadata.is_complex_task) {
+                const subtaskBtn = document.createElement('button');
+                subtaskBtn.className = 'view-subtasks-btn';
+                subtaskBtn.innerHTML = '📋';
+                subtaskBtn.title = '查看子任务';
+                subtaskBtn.onclick = () => {
+                    showSubtasksForMessage(metadata);
+                };
+                contentDiv.appendChild(subtaskBtn);
+                            
+                // 保存完整的子任务数据到元素（包括统计信息）
+                contentDiv.dataset.subtasks = JSON.stringify(metadata.sub_tasks);
+                contentDiv.dataset.totalDuration = metadata.total_duration || 0;
+                contentDiv.dataset.parallelEfficiency = metadata.parallel_efficiency || 0;
+            }
+            
+            // 使用 marked 渲染 Markdown
+            if (role === 'assistant') {
+                contentDiv.innerHTML += marked.parse(content);
+            } else {
+                contentDiv.textContent = content;
+            }
+
+            messageDiv.appendChild(avatar);
+            messageDiv.appendChild(contentDiv);
+            container.appendChild(messageDiv);
+
+            if (scroll) {
+                scrollToBottom();
+            }
+
+            return messageDiv;  // ← 返回元素引用
+        }
+
+
+
+        // 自动调整文本框高度
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+        }
+
+        // 处理键盘事件
+        function handleKeyDown(event) {
+            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        // 滚动到底部
+        function scrollToBottom() {
+            const container = document.getElementById('chatContainer');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // 格式化时间
+        function formatTime(timestamp) {
+            // MongoDB 返回的是 UTC 时间字符串
+            const date = new Date(timestamp);
+            const now = new Date();
+
+            // 计算时间差（毫秒）
+            const diff = now - date;
+
+            // 转换为分钟
+            const diffMinutes = diff / 60000;
+            const diffHours = diff / 3600000;
+            const diffDays = diff / 86400000;
+
+            if (diffMinutes < 1) return '刚刚';
+            if (diffMinutes < 60) return `${Math.floor(diffMinutes)}分钟前`;
+            if (diffHours < 24) return `${Math.floor(diffHours)}小时前`;
+            if (diffDays < 7) return `${Math.floor(diffDays)}天前`;
+
+            // 超过7天显示具体日期
+            return date.toLocaleDateString('zh-CN', {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // 切换侧边栏（移动端）
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('open');
+        }
+
+
+        // 获取当前用户
+        function getCurrentUser() {
+            return localStorage.getItem('currentUser');
+        }
+
+        // 显示当前用户
+        function displayCurrentUser() {
+            const user = getCurrentUser();
+            if (user) {
+                document.getElementById('currentUser').textContent = `👤 ${user}`;
+            }
+        }
+
+        // 退出登录
+        function logout() {
+            if (!confirm('确定要退出登录吗？')) return;
+
+            // 清除登录信息
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('currentUser');
+
+            // 跳转到登录页
+            window.location.href = 'login.html';
+        }
+
+        // 页面加载时检查登录状态
+        document.addEventListener('DOMContentLoaded', async () => {
+            const token = localStorage.getItem('authToken');
+
+            if (!token) {
+                // 未登录，跳转到登录页
+                window.location.href = 'login.html';
+                return;
+            }
+
+            // 显示当前用户
+            displayCurrentUser();
+
+            // 加载会话列表
+            await loadSessions();
+            document.getElementById('messageInput').focus();
+        });
+    </script>
+</body>
+</html>

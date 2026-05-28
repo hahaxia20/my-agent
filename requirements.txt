@@ -1,0 +1,28 @@
+# Web Framework
+fastapi==0.109.0
+uvicorn==0.27.0
+
+# LLM & AI
+openai==1.12.0
+langgraph==0.0.20
+langchain-core==0.1.30
+langchain-openai==0.0.5
+
+# Database
+motor==3.3.2
+pymongo==4.6.1
+
+# Auth
+PyJWT==2.8.0
+bcrypt==4.1.2
+
+# Config & Utils
+python-dotenv==1.0.0
+pydantic==2.6.1
+pydantic-settings==2.1.0
+pyyaml==6.0.1
+
+# Tools
+tavily-python==0.3.1
+requests==2.31.0
+beautifulsoup4==4.12.3
