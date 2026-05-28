@@ -69,6 +69,14 @@ class Settings(BaseSettings):
     MONGODB_DB: str = "deerflow"
 
     # ═══════════════════════════════════════
+    # Neo4j 图数据库配置 (产业链图谱)
+    # ═══════════════════════════════════════
+    NEO4J_URI: str = "bolt://localhost:7687"
+    NEO4J_USERNAME: str = "neo4j"
+    NEO4J_PASSWORD: str = ""
+    NEO4J_DATABASE: str = "neo4j"
+
+    # ═══════════════════════════════════════
     # 上下文管理配置（混合策略）
     # ═══════════════════════════════════════
     CONTEXT_MAX_TOKENS: int = 4096
