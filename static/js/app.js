@@ -25,10 +25,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 5. 加载会话列表
     await loadSessions();
 
-    // 6. 加载产业链快捷入口
-    await loadIndustryShortcuts();
-
-    // 7. 聚焦输入框
+    // 6. 聚焦输入框
     document.getElementById('messageInput').focus();
 
     console.log('✅ My Agent 初始化完成');
@@ -36,20 +33,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // 页面关闭时的清理
 window.addEventListener('beforeunload', () => {
-    // 销毁图表实例
-    if (industryChartInstance) {
-        industryChartInstance.dispose();
-    }
+    // 无特殊清理需要
 });
 
 // 全局错误处理
 window.addEventListener('error', (e) => {
     console.error('全局错误:', e.error);
-});
-
-// 监听窗口大小变化，调整图表
-window.addEventListener('resize', () => {
-    if (industryChartInstance) {
-        industryChartInstance.resize();
-    }
 });

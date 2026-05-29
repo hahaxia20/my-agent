@@ -10,7 +10,6 @@ from src.api.middleware import setup_cors
 from src.api.routes import chat_router
 from src.api.routes import auth_router
 from src.api.routes import complex_tasks_router
-from src.api.routes import industry_router
 from src.core.logging_config import setup_logging
 
 # ═══════════════════════════════════════
@@ -83,7 +82,6 @@ def create_app() -> FastAPI:
     app.include_router(chat_router)
     app.include_router(auth_router)
     app.include_router(complex_tasks_router)
-    app.include_router(industry_router)
 
 
     # 健康检查

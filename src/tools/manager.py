@@ -43,10 +43,23 @@ tool_manager = ToolManager()
 # 注册默认工具
 from src.tools.calculator import CalculatorTool
 from src.tools.time import TimeTool
-from src.tools.web_search import WebSearchTool
 from src.tools.web_scraper import WebScraperTool
 
 tool_manager.register(CalculatorTool())
 tool_manager.register(TimeTool())
-tool_manager.register(WebSearchTool())
 tool_manager.register(WebScraperTool())
+
+# 网络搜索工具：根据 SEARCH_ENABLED 配置决定是否注册
+try:
+    from src.config import get_settings_safe
+    _settings = get_settings_safe()
+    if _settings.SEARCH_ENABLED:
+        from src.tools.web_search import WebSearchTool
+        tool_manager.register(WebSearchTool())
+    else:
+        print("⚠️  网络搜索工具已禁用（SEARCH_ENABLED=False）")
+except Exception as _e:
+    # 配置加载失败时仍然注册搜索工具（用默认配置）
+    from src.tools.web_search import WebSearchTool
+    tool_manager.register(WebSearchTool())
+    print(f"⚠️  配置加载异常，使用默认配置注册搜索工具: {_e}")
