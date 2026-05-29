@@ -228,61 +228,6 @@ function renderSessionList() {
     `).join('');
 }
 
-// 加载产业链列表到留白区域
-async function loadIndustryShortcuts() {
-    const shortcutsList = document.getElementById('industryShortcutsList');
-    if (!shortcutsList) return;
-    
-    try {
-        const token = localStorage.getItem('authToken');
-        const response = await fetch('http://localhost:8001/api/v1/industry/chains', {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
-        
-        if (response.status === 401) {
-            // 未登录，不显示产业链入口
-            return;
-        }
-        
-        if (response.ok) {
-            const data = await response.json();
-            const chains = data.chains || [];
-            
-            if (chains.length > 0) {
-                shortcutsList.innerHTML = chains.map(chain => `
-                    <button class="industry-shortcut-btn" onclick="jumpToIndustry('${chain}')">
-                        ${chain}
-                    </button>
-                `).join('');
-            } else {
-                shortcutsList.innerHTML = '<div style="color: #999; font-size: 14px;">暂无产业链数据</div>';
-            }
-        }
-    } catch (error) {
-        console.error('加载产业链列表失败:', error);
-        shortcutsList.innerHTML = '<div style="color: #999; font-size: 14px;">加载失败</div>';
-    }
-}
-
-// 跳转到产业链Tab
-function jumpToIndustry(industryName) {
-    console.log('跳转到产业链:', industryName);
-    
-    // 切换到产业链Tab
-    switchSidebarTab('industry');
-    
-    // 自动填充搜索框并搜索
-    setTimeout(() => {
-        const searchInput = document.getElementById('industrySearchInput');
-        if (searchInput) {
-            searchInput.value = industryName;
-            searchIndustry();
-        }
-    }, 100);
-}
-
 // 创建新对话
 async function createNewSession() {
     currentSessionId = null;
@@ -302,22 +247,8 @@ async function createNewSession() {
                 <span class="mode-hint-text">如果有复杂任务（多维度分析、对比研究等），可以切换到</span>
                 <button class="mode-hint-btn" onclick="switchMode('complex')">🚀 复杂模式</button>
             </div>
-            
-            <!-- 产业链快捷入口 -->
-            <div class="industry-shortcuts">
-                <div class="industry-shortcuts-title">
-                    <span>🔗</span>
-                    <span>产业链图谱</span>
-                </div>
-                <div class="industry-shortcuts-list" id="industryShortcutsList">
-                    <!-- 产业链列表将通过 JavaScript 动态加载 -->
-                </div>
-            </div>
         </div>
     `;
-    
-    // 重新加载产业链快捷入口
-    await loadIndustryShortcuts();
     
     // 更新欢迎文本（根据当前模式）
     updateWelcomeText(currentMode);

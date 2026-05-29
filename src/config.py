@@ -96,7 +96,18 @@ class Settings(BaseSettings):
     # ═══════════════════════════════════════
     # 搜索工具配置
     # ═══════════════════════════════════════
+    # 搜索引擎提供商：tavily（付费）/ duckduckgo（免费，无需 API key）
+    SEARCH_PROVIDER: str = "tavily"
+    # 是否启用网络搜索工具
+    SEARCH_ENABLED: bool = True
+    # Tavily API Key（SEARCH_PROVIDER=tavily 时必填）
     TAVILY_API_KEY: str = ""
+    # SerpAPI Key（预留）
+    SERPAPI_API_KEY: str = ""
+    # 默认返回结果条数
+    SEARCH_MAX_RESULTS: int = 3
+    # 默认搜索深度：basic（快速）/ advanced（详细）
+    SEARCH_DEPTH: str = "basic"
 
     # ═══════════════════════════════════════
     # JWT密钥配置

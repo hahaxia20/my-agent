@@ -412,28 +412,17 @@ class MyAgent:
     def _init_industry_graph_tools(self):
         """初始化产业链图谱工具（Neo4j）"""
         try:
-            from src.tools.industry_graph import (
-                QueryIndustryChainTool,
-                ListIndustryChainsTool,
-                FindUpstreamTool
-            )
-            
-            # 注册图谱工具
-            graph_tools = [
-                QueryIndustryChainTool(),
-                ListIndustryChainsTool(),
-                FindUpstreamTool()
-            ]
-            
-            for tool in graph_tools:
-                self.tool_manager.register(tool)
-                # 转换为 LangChain 工具
-                langchain_tool = self._convert_to_langchain_tool(tool)
-                self.tools.append(langchain_tool)
-                logger.info(f"✅ 注册图谱工具: {tool.name}")
-            
-            logger.info(f"📊 产业链图谱工具已加载 ({len(graph_tools)} 个)")
-            
+            from src.tools.industry_graph import SmartGraphQueryTool
+
+            # 注册图谱智能查询工具
+            tool = SmartGraphQueryTool()
+            self.tool_manager.register(tool)
+            langchain_tool = self._convert_to_langchain_tool(tool)
+            self.tools.append(langchain_tool)
+            logger.info(f"✅ 注册图谱工具: {tool.name}")
+
+            logger.info("📊 产业链图谱工具已加载 (1 个)")
+
         except Exception as e:
             logger.warning(f"⚠️ 产业链图谱工具加载失败（Neo4j 可能未启动）: {e}")
             logger.warning("💡 提示：启动 Neo4j 后可自动启用图谱功能")

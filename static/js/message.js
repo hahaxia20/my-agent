@@ -297,23 +297,6 @@ function renderSubtaskProgress(contentDiv, subTasks) {
     }).join('');
 }
 
-// 跳转到产业链Tab
-function jumpToIndustryTab(industryName) {
-    console.log('跳转到产业链:', industryName);
-    
-    // 切换到产业链Tab
-    switchSidebarTab('industry');
-    
-    // 自动填充搜索框并搜索
-    setTimeout(() => {
-        const searchInput = document.getElementById('industrySearchInput');
-        if (searchInput) {
-            searchInput.value = industryName;
-            searchIndustry();
-        }
-    }, 100);
-}
-
 // 修改 addMessage 函数，返回元素引用
 function addMessage(role, content, scroll = true, metadata = null) {
     const container = document.getElementById('chatContainer');
@@ -354,24 +337,6 @@ function addMessage(role, content, scroll = true, metadata = null) {
     // 使用 marked 渲染 Markdown
     if (role === 'assistant') {
         contentDiv.innerHTML += marked.parse(content);
-        
-        // 尝试渲染产业链图谱
-        setTimeout(() => {
-            renderGraphInMessage(contentDiv, content);
-            
-            // 检测是否包含产业链信息，显示跳转提示
-            const industryMatch = content.match(/(氢能|核能|新能源|储能|半导体|光伏|风电|锂电池|燃料电池|钢铁|化工|有色金属|稀土|生物医药|航空航天|新材料|5G|物联网|大数据|人工智能|医疗器械|中医药|疫苗)/);
-            if (industryMatch && !content.includes('GRAPH_DATA_START')) {
-                // 如果提到了产业链但没有图谱，显示跳转提示
-                const tipDiv = document.createElement('div');
-                tipDiv.className = 'industry-jump-tip';
-                tipDiv.innerHTML = `
-
-                    💡 检测到产业链关键词，点击 <a href="javascript:void(0)" onclick="jumpToIndustryTab('${industryMatch[1]}')">查看完整可视化图谱 →</a>
-                `;
-                contentDiv.appendChild(tipDiv);
-            }
-        }, 100);
     } else {
         contentDiv.textContent = content;
     }

@@ -7,8 +7,6 @@
     
     <!-- Markdown 渲染库 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <!-- ECharts 图谱可视化 -->
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     
     <!-- 样式文件 -->
     <link rel="stylesheet" href="static/css/styles.css">
@@ -28,11 +26,8 @@
                 
                 <!-- 侧边栏 Tab 切换 -->
                 <div class="sidebar-tabs">
-                    <button class="sidebar-tab active" onclick="switchSidebarTab('chat')" id="tabChat">
+                    <button class="sidebar-tab active" id="tabChat">
                         <span>💬</span> 对话
-                    </button>
-                    <button class="sidebar-tab" onclick="switchSidebarTab('industry')" id="tabIndustry">
-                        <span>📊</span> 产业链
                     </button>
                 </div>
             </div>
@@ -41,20 +36,6 @@
             <div class="sidebar-panel active" id="panelChat">
                 <div class="session-list" id="sessionList">
                     <!-- 会话列表动态生成 -->
-                </div>
-            </div>
-            
-            <!-- 产业链列表面板 -->
-            <div class="sidebar-panel" id="panelIndustry">
-                <div class="industry-panel">
-                    <div class="industry-search">
-                        <input type="text" id="industrySearchInput" placeholder="搜索产业链..." 
-                               onkeydown="if(event.key==='Enter') searchIndustry()">
-                        <button onclick="searchIndustry()">🔍</button>
-                    </div>
-                    <div class="industry-list" id="industryList">
-                        <div class="loading-text">加载中...</div>
-                    </div>
                 </div>
             </div>
             
@@ -105,17 +86,6 @@
                             <span class="mode-hint-text">如果有复杂任务（多维度分析、对比研究等），可以切换到</span>
                             <button class="mode-hint-btn" onclick="switchMode('complex')">🚀 复杂模式</button>
                         </div>
-                        
-                        <!-- 产业链快捷入口 -->
-                        <div class="industry-shortcuts">
-                            <div class="industry-shortcuts-title">
-                                <span>🔗</span>
-                                <span>产业链图谱</span>
-                            </div>
-                            <div class="industry-shortcuts-list" id="industryShortcutsList">
-                                <!-- 产业链列表将通过 JavaScript 动态加载 -->
-                            </div>
-                        </div>
                     </div>
                 </div>
 
@@ -134,48 +104,7 @@
                     </div>
                 </div>
             </div>
-            
-            <!-- 产业链界面 -->
-            <div id="industryView" class="content-view">
-                <div class="industry-main-header">
-                    <h2>📊 产业链图谱</h2>
-                    <div class="industry-main-stats" id="industryMainStats">
-                        选择一个产业链查看详细信息
-                    </div>
-                </div>
-                
-                <div class="industry-main-content">
-                    <div class="industry-main-placeholder" id="industryPlaceholder">
-                        <div class="placeholder-icon">📊</div>
-                        <h3>产业链图谱可视化</h3>
-                        <p>在左侧选择一个产业链，即可查看完整的产业链图谱</p>
-                        <div class="quick-access">
-                            <p>快速访问：</p>
-                            <div class="quick-chips" id="quickChips">
-                                <!-- 动态生成常用产业链 -->
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="industry-graph-full" id="industryGraphFull" style="display:none;">
-                        <div class="industry-graph-container">
-                            <div class="industry-graph-header">
-                                <span>📊</span>
-                                <span id="industryFullTitle">产业链图谱</span>
-                            </div>
-                            <div id="industryFullChart" class="industry-graph-chart-full"></div>
-                            <div class="industry-graph-footer">
-                                <span id="industryFullStats">节点: 0 | 关系: 0</span>
-                                <span>💡 支持拖拽、缩放、点击节点查看详情</span>
-                            </div>
-                        </div>
-                        
-                        <div class="industry-description" id="industryDescription" style="display:none;">
-                            <!-- 产业链文字描述 -->
-                        </div>
-                    </div>
-                </div>
-            </div>
+
         </div>
     </div>
 
@@ -197,9 +126,7 @@
     <script src="static/js/chat.js"></script>
     <!-- 3. 消息处理（依赖 chat.js, utils.js） -->
     <script src="static/js/message.js"></script>
-    <!-- 4. 产业链功能（依赖 utils.js, message.js） -->
-    <script src="static/js/industry.js"></script>
-    <!-- 5. 主应用入口（依赖所有其他文件） -->
+    <!-- 4. 主应用入口（依赖所有其他文件） -->
     <script src="static/js/app.js"></script>
 </body>
 </html>
