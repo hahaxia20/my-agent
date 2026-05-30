@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+import re
 from typing import AsyncIterator, Optional, Dict, Any, List
 from datetime import datetime
 from collections import deque
@@ -214,3 +215,127 @@ class StreamMetrics:
             "total_skill_calls": len(self.skill_calls),
             "errors": self.errors
         }
+
+
+class StreamCypherFilter:
+    """流式输出 Cypher 过滤器 —— 防止 Neo4j Cypher 查询语句泄漏到用户界面
+
+    设计原则：宁可漏放，不可误杀。
+    使用 Neo4j 结构性模式检测（而非关键词），避免误判自然语言。
+    """
+
+    # 高置信度 Cypher 结构性模式（在自然语言中几乎不可能出现）
+    _CYPHER_STRUCTURES = (
+        "(:",      # 节点标签  MATCH (n:Entity)
+        "-[",      # 关系语法  -[r:RELATIONSHIP]->
+        "]->",     # 关系箭头  ]->(target)
+        "<-[",     # 反向关系  <-[r:RELATIONSHIP]-
+        "}.CONTAINS", # 属性+函数 (少见但确定性强)
+    )
+    # Cypher 特有函数/子句（在自然语言中极少见）
+    _CYPHER_FUNCTIONS = (
+        "CONTAINS ", "STARTS WITH ", "ENDS WITH ",
+        "OPTIONAL MATCH", "ORDER BY ", "COLLECT(",
+    )
+    # RETURN 是强信号，但单独 "return" 可能出现在编程讨论中
+    # 所以我们要求 RETURN 后面跟着类似 Cypher 的标识符
+    _RETURN_PATTERN = "RETURN "
+
+    def __init__(self):
+        self._buffer = ""
+        self._suppressing = False
+        self._seen_return = False
+
+    def _is_cypher(self, text: str) -> bool:
+        """使用结构模式检测判断是否为 Cypher（高置信度，低误报率）"""
+        upper = text.upper()
+        # 1. 结构性模式（最高置信度）
+        if any(p in text for p in self._CYPHER_STRUCTURES):
+            return True
+        # 2. 节点标签模式 (e:Entity), (n:Label), (chain:Entity) 等
+        if re.search(r'\(\w+:\w+', text):
+            return True
+        # 3. Cypher 特有函数
+        if any(f in upper for f in self._CYPHER_FUNCTIONS):
+            return True
+        # 4. RETURN 后跟 Cypher 风格标识符（如 e.title, r.weight）
+        if "RETURN " in upper and any(c in text for c in "._"):
+            return True
+        return False
+
+    def _has_cjk(self, text: str) -> bool:
+        return any('\u4e00' <= c <= '\u9fff' for c in text)
+
+    def _chunk_still_cypher(self, chunk: str) -> bool:
+        """检查 chunk 是否仍然包含 Cypher 结构（防止字符串内的中文触发提前退出）"""
+        if self._is_cypher(chunk):
+            return True
+        if re.search(r'\bLIMIT\s+\d+\s*$', self._buffer, re.IGNORECASE):
+            return True
+        return False
+
+    def _extract_answer_from_chunk(self, chunk: str) -> str:
+        """从混合 chunk（Cypher尾部 + 答案开头）中提取纯答案部分"""
+        # 场景: chunk = "LIMIT 20氢能的上游是制氢" → 提取 "氢能的上游是制氢"
+        m = re.search(r'\bLIMIT\s+\d+\s*', chunk, re.IGNORECASE)
+        if m:
+            after = chunk[m.end():]
+            if self._has_cjk(after):
+                return after
+        return ""
+
+    def process(self, chunk: str) -> str:
+        """处理一个流式 chunk，返回过滤后的文本"""
+        if not chunk:
+            return ""
+
+        self._buffer += chunk
+
+        if self._suppressing:
+            upper = self._buffer.upper()
+            if not self._seen_return and "RETURN " in upper:
+                self._seen_return = True
+
+            # RETURN 之后的中文才是真正的自然语言答案
+            # 但必须确保 chunk 不是 Cypher 的一部分（如字符串内的中文 '上游'）
+            if self._seen_return and self._has_cjk(chunk):
+                if not self._chunk_still_cypher(chunk):
+                    result = chunk
+                    self._buffer = ""
+                    self._suppressing = False
+                    self._seen_return = False
+                    return result
+                # chunk 仍含 Cypher，尝试提取答案部分
+                extracted = self._extract_answer_from_chunk(chunk)
+                if extracted:
+                    self._buffer = ""
+                    self._suppressing = False
+                    self._seen_return = False
+                    return extracted
+            return ""
+
+        # 只在高置信度时进入抑制模式
+        if self._is_cypher(self._buffer):
+            self._suppressing = True
+            self._seen_return = False
+            return ""
+
+        # 安全输出（保留最后几个字符作为前缀缓冲区，防止关键词被拆分）
+        if len(self._buffer) > 10:
+            result = self._buffer[:-6]
+            self._buffer = self._buffer[-6:]
+            return result
+
+        return ""
+
+    def flush(self) -> str:
+        """流结束时，输出缓冲区剩余内容（过滤后）"""
+        if not self._buffer:
+            return ""
+        remaining = self._buffer.strip()
+        self._buffer = ""
+        self._suppressing = False
+        self._seen_return = False
+        if self._is_cypher(remaining):
+            return ""
+        return remaining

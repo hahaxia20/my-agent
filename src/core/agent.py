@@ -40,7 +40,7 @@ from src.core.context import SystemPromptContextManager, ConversationContextMana
 from src.core.logging_decorator import log_method_call
 from src.core.stream_manager import (
     StreamBuffer, StreamFormatter, StreamMetrics,
-    StreamChunk, StreamEventType
+    StreamChunk, StreamEventType, StreamCypherFilter
 )
 from src.core.security import InputSecurityFilter, OutputSecurityFilter
 from src.storage.mongodb import get_mongodb
@@ -854,6 +854,7 @@ class MyAgent:
         total_tokens = {"prompt": 0, "completion": 0, "total": 0}
         current_tool = None
         tool_start_time = None
+        cypher_filter = StreamCypherFilter()  # Cypher 泄漏过滤器
 
         try:
             async with self._semaphore:
@@ -903,9 +904,14 @@ class MyAgent:
                             metrics.record_chunk(chunk.content or "", is_empty)
 
                         if chunk.content and chunk.content.strip():
+                            # Cypher 过滤：剥离底层查询语句，只保留自然语言
+                            filtered = cypher_filter.process(chunk.content)
+                            if not filtered or not filtered.strip():
+                                continue
+
                             buffered = buffer.add(StreamChunk(
                                 type=StreamEventType.TEXT,
-                                content=chunk.content
+                                content=filtered
                             ))
 
                             if buffered:
@@ -979,6 +985,17 @@ class MyAgent:
 
                         yield tool_msg
                         current_tool = None
+
+                # 刷新 Cypher 过滤器剩余内容
+                cypher_remaining = cypher_filter.flush()
+                if cypher_remaining and cypher_remaining.strip():
+                    buffered = buffer.add(StreamChunk(
+                        type=StreamEventType.TEXT,
+                        content=cypher_remaining
+                    ))
+                    if buffered:
+                        full_response += buffered
+                        yield buffered
 
                 # 刷新剩余缓冲区
                 remaining = buffer.flush()
