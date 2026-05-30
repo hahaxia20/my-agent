@@ -1,68 +1,71 @@
-#  My Agent - 生产级 AI Agent 系统
+# My Agent - 生产级 AI Agent 系统
 
 <p align="center">
   <strong>基于 LangGraph ReAct 架构的多模态 AI Agent 平台</strong>
 </p>
 
 <p align="center">
-  <a href="#features">特性</a> •
-  <a href="#quick-start">快速开始</a> •
-  <a href="#architecture">架构</a> •
-  <a href="#api-docs">API</a> •
-  <a href="#skills-system">Skills 系统</a> •
-  <a href="#tech-stack">技术栈</a>
+  <a href="#核心特性">特性</a> •
+  <a href="#快速开始">快速开始</a> •
+  <a href="#架构设计">架构</a> •
+  <a href="#api-文档">API</a> •
+  <a href="#产业链图谱">产业链图谱</a> •
+  <a href="#skills-系统">Skills</a> •
+  <a href="#技术栈">技术栈</a>
 </p>
 
 ---
 
-##  核心特性
+## 核心特性
 
 ### 🤖 智能对话
-- **流式输出 (SSE)**: 实时生成,打字机效果
-- **上下文管理**: 智能对话历史压缩与重要性筛选
-- **多轮对话**: 支持连续对话,保持上下文一致性
-- **会话持久化**: MongoDB 存储,支持会话管理
+- **流式输出 (SSE)**：实时生成，打字机效果
+- **上下文管理**：智能对话历史压缩与重要性筛选
+- **多轮对话**：支持连续对话，保持上下文一致性
+- **会话持久化**：MongoDB 存储，支持会话管理
 
-### 产业链图谱可视化
-- **ECharts 力导向图**: 交互式产业链关系图谱
-- **节点拖拽**: 自由拖拽节点，边自动跟随拉伸
-- **双Tab界面**: 对话与产业链独立Tab，职责分离
-- **对话联动**: 对话中识别产业链关键词，一键跳转图谱
-- **快捷入口**: 新建会话留白区域显示产业链快捷按钮
+### 🔗 产业链图谱
+- **Neo4j 知识图谱**：13 条产业链、576 个节点、1500+ 条关系
+- **语义智能查询**：LLM 理解自然语言意图，自动生成 Cypher 并返回纯净答案
+- **ECharts 力导向图**：交互式可视化，节点拖拽，边自动跟随
+- **双 Tab 界面**：对话与图谱独立 Tab，职责分离
+- **关键词联动**：对话中识别产业链术语，一键跳转图谱
+- **快捷入口**：新建会话留白区域显示产业链快捷按钮
 
-###  Sub-Agent 编排系统
-- **任务分解**: 自动将复杂任务拆分为多个子任务
-- **并行执行**: 支持子任务并发执行,提升效率
-- **结果合成**: 智能整合多个子任务结果
-- **流式进度**: 实时展示子任务执行进度
+### 🧩 Sub-Agent 编排系统
+- **任务分解**：自动将复杂任务拆分为多个子任务
+- **并行执行**：支持子任务并发执行，提升效率
+- **结果合成**：智能整合多个子任务结果
+- **流式进度**：实时展示子任务执行进度
 
 ### 🎯 插件化 Skills 系统
-- **配置化定义**: 基于 Markdown (SKILL.md) 文件配置
-- **自动加载**: 热插拔,无需重启服务
-- **支持资源**: 脚本、参考文档、静态资源
-- **向后兼容**: 同时支持代码 Skill 和 Markdown Skill
+- **配置化定义**：基于 Markdown（SKILL.md）文件配置
+- **自动加载**：热插拔，无需重启服务
+- **支持资源**：脚本、参考文档、静态资源
 
 ### 🛠️ 内置工具集
-- **Web Search**: Tavily 搜索引擎集成
-- **Web Scraper**: 网页内容抓取与分析
-- **Calculator**: 数学计算工具
-- **Time Tools**: 时间日期处理
+- **Smart Graph Query**：产业链图谱语义查询（LLM 自动生成 Cypher）
+- **Web Search**：Tavily / DuckDuckGo 搜索引擎集成
+- **Web Scraper**：网页内容抓取与分析
+- **Calculator**：数学计算工具
+- **Time Tools**：时间日期处理
 
 ### 🔐 安全与认证
-- **JWT 认证**: 安全的用户身份验证
-- **CORS 配置**: 跨域资源共享控制
-- **配置管理**: 环境变量驱动的配置系统
+- **JWT 认证**：安全的用户身份验证
+- **CORS 配置**：跨域资源共享控制
+- **安全提示词**：结构化安全边界，防止提示注入
+- **配置管理**：环境变量驱动，敏感信息隔离
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
 ### 环境要求
 
 - Python 3.10+
 - MongoDB 4.4+
-- Neo4j 5.x (可选，用于产业链图谱)
-- OpenAI API Key (或兼容的 LLM API)
+- Neo4j 5.x（产业链图谱功能）
+- OpenAI API Key（或兼容的 LLM API，如阿里云通义千问）
 
 ### 安装步骤
 
@@ -71,21 +74,19 @@
 git clone https://github.com/YOUR_USERNAME/my-agent.git
 cd my-agent
 
-# 2. 创建虚拟环境
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# 或
-venv\Scripts\activate     # Windows
+# 2. 创建并激活虚拟环境
+conda create -n my-agent python=3.12
+conda activate my-agent
 
 # 3. 安装依赖
 pip install -r requirements.txt
 
 # 4. 配置环境变量
 cp .env.example .env
-# 编辑 .env 文件,填入你的 API Key 和数据库配置
+# 编辑 .env，填入 API Key 和数据库配置
 ```
 
-### 配置示例 (.env)
+### 配置示例（.env）
 
 ```env
 # LLM 配置
@@ -97,12 +98,13 @@ MODEL_NAME=gpt-4o
 MONGODB_URL=mongodb://localhost:27017
 MONGODB_DB=myagent
 
-# Neo4j 配置 (可选，用于产业链图谱)
+# Neo4j 配置（产业链图谱）
 NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
+NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=your-password
+NEO4J_DATABASE=neo4j
 
-# 搜索配置 (可选)
+# 搜索配置（可选）
 TAVILY_API_KEY=your-tavily-key
 
 # JWT 密钥
@@ -112,84 +114,87 @@ JWT_SECRET_KEY=your-secret-key
 ### 启动服务
 
 ```bash
-# 启动后端
+# 方式一：使用启动脚本
 python run.py
 
-# 或使用 uvicorn 直接启动
+# 方式二：uvicorn 直接启动（开发模式）
 uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-访问:
-- **API 文档**: http://localhost:8001/docs
-- **前端界面**: 打开 `frontend.html` 文件
-- **健康检查**: http://localhost:8001/health
+访问：
+- **前端界面**：浏览器打开 `index.html`
+- **API 文档**：http://localhost:8001/docs
+- **健康检查**：http://localhost:8001/health
 
 ---
 
-## 🏗️ 架构设计
+## 架构设计
 
 ```
-┌─────────────────────────────────────────────────┐
-│                  Frontend                       │
-│         (HTML/JS/CSS - SSE Streaming)           │
-└────────────────────────────────────────────────┘
-                 │ HTTP/SSE
-┌────────────────▼────────────────────────────────┐
-│              FastAPI Server                     │
-│  ┌──────────┐  ┌──────────┐  ┌──────────────┐ │
-│  │ Auth API │  │ Chat API │  │ Complex Task │ │
-│  │          │  │          │  │     API      │ │
-│  └──────────┘  └──────────┘  └──────────────┘ │
-└────────────────┬────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────────────┐
-│              Core Agent Layer                   │
-│  ┌──────────────────┐  ┌────────────────────┐  │
-│  │ Single Agent     │  │ Sub-Agent          │  │
-│  │ (ReAct + Tools)  │  │ Orchestrator       │  │
-│  │                  │  │  • Decomposer      │  │
-│  │ • Context Mgmt   │  │  • Worker Pool     │  │
-│  │ • Tool Calling   │  │  • Synthesizer     │  │
-│  └──────────────────┘  ────────────────────┘  │
-└────────────────┬────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────────────┐
-│           Plugins & Tools Layer                 │
-│  ┌──────────────┐  ┌──────────────────────┐    │
-│  │ Skills       │  │ Tools                │    │
-│  │ • Markdown   │  │ • Web Search         │    │
-│  │ • Code-based │  │ • Web Scraper        │    │
-│  │ • Auto-load  │  │ • Calculator         │    │
-│  └──────────────┘  └──────────────────────┘    │
-└────────────────────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────────────┐
-│              Storage Layer                      │
-│  ──────────────────┐  ┌────────────────────┐  │
-│  │ MongoDB          │  │ LangGraph          │  │
-│  │ • Sessions       │  │ Checkpoint Saver   │  │
-│  │ • Messages       │  │ (Conversation State)│ │
-│  └──────────────────┘  └────────────────────┘  │
-└─────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│                  Frontend                        │
+│      index.html / login.html / static/           │
+│           (Vanilla JS + SSE + ECharts)           │
+└──────────────────────┬───────────────────────────┘
+                       │ HTTP / SSE
+┌──────────────────────▼───────────────────────────┐
+│                FastAPI Server                    │
+│   ┌──────────┐  ┌──────────┐  ┌───────────────┐ │
+│   │ Auth API │  │ Chat API │  │ Complex Tasks │ │
+│   └──────────┘  └──────────┘  └───────────────┘ │
+└──────────────────────┬───────────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────────┐
+│              Core Agent Layer                    │
+│   ┌──────────────────┐  ┌──────────────────────┐ │
+│   │  Single Agent    │  │  Sub-Agent           │ │
+│   │  (ReAct + Tools) │  │  Orchestrator        │ │
+│   │  • Context Mgmt  │  │  • Decomposer        │ │
+│   │  • Tool Calling  │  │  • Worker Pool       │ │
+│   └──────────────────┘  │  • Synthesizer       │ │
+│                         └──────────────────────┘ │
+└──────────────────────┬───────────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────────┐
+│            Plugins & Tools Layer                 │
+│   ┌──────────────────┐  ┌──────────────────────┐ │
+│   │  Skills          │  │  Tools               │ │
+│   │  • Markdown 配置 │  │  • Smart Graph Query │ │
+│   │  • 自动加载      │  │  • Web Search        │ │
+│   └──────────────────┘  │  • Web Scraper       │ │
+│                         │  • Calculator / Time │ │
+│                         └──────────────────────┘ │
+└──────────────────────┬───────────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────────┐
+│                Storage Layer                     │
+│   ┌──────────────────┐  ┌──────────────────────┐ │
+│   │  MongoDB         │  │  Neo4j               │ │
+│   │  • Sessions      │  │  • IndustryChain     │ │
+│   │  • Messages      │  │  • Segment / Code    │ │
+│   │  • Checkpoints   │  │  • DEPENDS_ON 关系   │ │
+│   └──────────────────┘  └──────────────────────┘ │
+└──────────────────────────────────────────────────┘
 ```
 
 ### 核心模块
 
-| 模块 | 路径 | 功能 |
+| 模块 | 路径 | 职责 |
 |------|------|------|
-| **API Routes** | `src/api/routes/` | RESTful API 接口 (Chat, Auth, Complex Tasks) |
-| **Core Agent** | `src/core/agent.py` | LangGraph ReAct Agent 实现 |
-| **Sub-Agent** | `src/core/sub_agent/` | 多 Agent 编排系统 |
-| **Context** | `src/core/context/` | 对话上下文管理 |
-| **Tools** | `src/tools/` | 内置工具集 (搜索、爬虫、计算等) |
-| **Skills** | `src/skills/` | 插件化技能系统 |
-| **Storage** | `src/storage/` | MongoDB 数据持久化 |
+| API 路由 | `src/api/routes/` | RESTful 接口（Chat、Auth、Complex Tasks） |
+| Agent 核心 | `src/core/agent.py` | LangGraph ReAct Agent，工具调用与上下文管理 |
+| Sub-Agent | `src/core/sub_agent/` | 复杂任务分解、并行执行、结果合成 |
+| 上下文管理 | `src/core/context/` | 对话历史压缩、重要性筛选 |
+| 系统提示词 | `src/core/prompt/` | 结构化安全边界提示词管理 |
+| 工具集 | `src/tools/` | Smart Graph Query、搜索、爬虫、计算器等 |
+| Skills | `src/skills/` | 插件化技能系统，Markdown 配置热加载 |
+| 存储层 | `src/storage/` | MongoDB（会话持久化）、Neo4j（产业链图谱） |
 
 ---
 
-## 📖 API 文档
+## API 文档
 
-### 认证接口
+### 认证
 
 ```http
 POST /api/v1/auth/login
@@ -199,15 +204,9 @@ Content-Type: application/json
   "username": "admin",
   "password": "your-password"
 }
-
-Response:
-{
-  "access_token": "eyJhbGci...",
-  "token_type": "bearer"
-}
 ```
 
-### 普通对话 (流式)
+### 普通对话（流式 SSE）
 
 ```http
 POST /api/v1/chat/stream
@@ -215,18 +214,17 @@ Authorization: Bearer {token}
 Content-Type: application/json
 
 {
-  "message": "你好,介绍一下你自己",
+  "message": "氢能产业链的上游有哪些环节？",
   "session_id": "optional-session-id"
 }
 
-Response: Server-Sent Events (SSE)
+Response: Server-Sent Events
 data: __SESSION_ID__:session_123
-data: 你好!我是...
-data: 一个AI助手...
+data: 氢能产业链的上游环节包括...
 data: [DONE]
 ```
 
-### 复杂任务 (流式)
+### 复杂任务（流式 SSE）
 
 ```http
 POST /api/v1/complex-chat/stream
@@ -234,17 +232,15 @@ Authorization: Bearer {token}
 Content-Type: application/json
 
 {
-  "task": "对比分析 Python 和 Java 的优缺点",
-  "session_id": "optional-session-id",
-  "decomposition_strategy": "auto"
+  "task": "对比分析氢能与储能产业链的上游重叠环节",
+  "session_id": "optional-session-id"
 }
 
-Response: Server-Sent Events (SSE)
+Response: Server-Sent Events
 data: {"type": "decompose_start"}
 data: {"type": "decompose_complete", "data": {"sub_tasks_count": 3}}
-data: {"type": "subtask_start", "data": {"task_id": "1", "task_name": "Python分析"}}
-data: {"type": "subtask_complete", "data": {"task_id": "1", "duration": 5.2}}
-data: {"type": "synthesis_start"}
+data: {"type": "subtask_start", "data": {"task_id": "1", "task_name": "..."}}
+data: {"type": "subtask_complete", "data": {"task_id": "1"}}
 data: {"type": "synthesis_complete", "data": {"final_result": "..."}}
 data: [DONE]
 ```
@@ -252,212 +248,169 @@ data: [DONE]
 ### 会话管理
 
 ```http
-GET /api/v1/sessions              # 获取会话列表
-GET /api/v1/sessions/{id}         # 获取会话详情
-DELETE /api/v1/sessions/{id}      # 删除会话
+GET    /api/v1/sessions          # 会话列表
+GET    /api/v1/sessions/{id}     # 会话详情
+DELETE /api/v1/sessions/{id}     # 删除会话
 ```
 
-### 产业链图谱
-
-```http
-GET /api/v1/industry/chains       # 获取所有产业链列表
-POST /api/v1/industry/query       # 查询产业链图谱
-Content-Type: application/json
-
-{
-  "industry": "氢能",
-  "include_codes": true
-}
-
-Response:
-{
-  "success": true,
-  "industry": "氢能",
-  "graph": {
-    "nodes": [...],
-    "edges": [...]
-  },
-  "stats": {...},
-  "description": "..."
-}
-```
-
-完整 API 文档请访问: http://localhost:8001/docs
+完整 API 文档：http://localhost:8001/docs
 
 ---
 
-##  Skills 系统
+## 产业链图谱
 
-### 什么是 Skills?
+### 数据模型
 
-Skills 是基于 [Agent Skills 规范](https://agentskills.io/specification) 的插件化能力扩展系统。通过 Markdown 文件配置,无需编写代码即可为 Agent 添加新能力。
+图谱数据存储在 Neo4j 中，节点和关系如下：
+
+| 节点类型 | 属性 | 说明 |
+|---------|------|------|
+| `IndustryChain` | `name` | 产业链主节点（氢能、核能、量子科技等） |
+| `Segment` | `sid`, `name`, `sequence`, `position`, `chain` | 产业链环节 |
+| `Position` | `name` | 位置标签（上游/中游/下游） |
+| `IndustryCode` | `code`, `full_name` | 国家行业分类小类代码 |
+
+| 关系类型 | 方向 | 说明 |
+|---------|------|------|
+| `BELONGS_TO_CHAIN` | Segment → IndustryChain | 环节属于哪条产业链 |
+| `AT_POSITION` | Segment → Position | 环节的位置分类 |
+| `HAS_CODE` | Segment → IndustryCode | 环节包含的行业代码 |
+| `DEPENDS_ON` | Segment → Segment | 环节间上下游依赖 |
+
+### 数据导入
+
+```bash
+# 从 Excel 导入（自动先清空再全量重建）
+python scripts/import_industry_chains.py
+
+# 导入完成后统计
+# 节点: 576 | 关系: 1501 | 产业链: 13
+```
+
+### 语义查询原理
+
+`SmartGraphQueryTool` 基于 **GraphCypherQAChain** 实现语义查询，流程如下：
+
+```
+用户自然语言问题
+      ↓
+LLM 理解意图 + 图谱 Schema
+      ↓
+自动生成 Cypher 查询
+      ↓
+执行查询获取结果
+      ↓
+LLM 转写为纯净自然语言答案
+```
+
+无需预定义查询模板，支持模糊匹配、跨链分析、统计类问题。
+
+---
+
+## Skills 系统
+
+Skills 是基于 Markdown 配置的插件化能力扩展系统，无需编写代码即可为 Agent 添加新能力。
 
 ### 目录结构
 
 ```
 src/skills/
-├── web-content-analyzer/          # Skill 目录
-│   ├── SKILL.md                   # 必需: 元数据 + 指令
-│   ├── scripts/                   # 可选: 可执行脚本
-│   │   ── analyze.py
-│   └── references/                # 可选: 参考文档
-│       ── REFERENCE.md
-├── data-analysis/                 # 另一个 Skill
+├── web-content-analyzer/    # 网页内容分析 Skill
 │   └── SKILL.md
-```
-
-### SKILL.md 示例
-
-```markdown
----
-name: web-content-analyzer
-description: 分析网页内容,提取关键信息,总结内容并检测 SEO 问题
-license: MIT
-metadata:
-  author: Your Name
-  version: "1.0.0"
----
-
-# Web Content Analyzer
-
-## 使用场景
-- 分析网页内容和结构
-- 提取关键信息和摘要
-- 检测 SEO 问题
-
-## 执行步骤
-1. 使用 web_scraper 工具获取网页内容
-2. 分析页面结构和关键元素
-3. 生成内容摘要和分析报告
-4. 输出结构化结果
+├── data-analysis/           # 数据分析 Skill
+│   └── SKILL.md
+└── knowledge-qa/            # 知识问答 Skill
 ```
 
 ### 创建新 Skill
 
 ```bash
-# 1. 创建目录
-mkdir src/skills/my-custom-skill
-
-# 2. 创建 SKILL.md
-cat > src/skills/my-custom-skill/SKILL.md << 'EOF'
+mkdir src/skills/my-skill
+cat > src/skills/my-skill/SKILL.md << 'EOF'
 ---
-name: my-custom-skill
-description: 我的自定义 Skill
+name: my-skill
+description: 我的自定义技能
 ---
 
-# My Custom Skill
+# My Skill
 
-## 功能
-...
+## 使用场景
+- 场景一
+- 场景二
 
-## 使用方法
-...
+## 执行步骤
+1. 第一步
+2. 第二步
 EOF
-
-# 3. 重启服务,自动加载
-python run.py
 ```
 
-详细使用指南: [SKILLS_GUIDE.md](SKILLS_GUIDE.md)
+创建后重启服务即可自动加载。详细指南见 [SKILLS_GUIDE.md](SKILLS_GUIDE.md)。
 
 ---
 
-## 🛠️ 技术栈
+## 技术栈
 
-### 后端
-- **Web Framework**: [FastAPI](https://fastapi.tiangolo.com/) 0.109.0
-- **ASGI Server**: [Uvicorn](https://www.uvicorn.org/) 0.27.0
-- **LLM Framework**: [LangChain](https://python.langchain.com/) + [LangGraph](https://langchain-ai.github.io/langgraph/)
-- **LLM Provider**: OpenAI / 阿里云通义千问 (兼容 OpenAI API)
-
-### 数据存储
-- **Database**: [MongoDB](https://www.mongodb.com/) 4.4+
-- **Graph Database**: [Neo4j](https://neo4j.com/) 5.x (产业链图谱)
-- **Driver**: Motor (异步) + PyMongo
-- **Checkpoint**: LangGraph MongoDB Checkpoint Saver
-
-### 认证与安全
-- **JWT**: PyJWT 2.8.0
-- **Password Hashing**: bcrypt 4.1.2
-- **CORS**: FastAPI CORS Middleware
-
-### 外部服务
-- **Web Search**: [Tavily](https://tavily.com/) API
-- **Web Scraping**: BeautifulSoup4 + Requests
-
-### 前端
-- **Vanilla JS**: 原生 JavaScript (无框架)
-- **SSE**: Server-Sent Events 流式传输
-- **Markdown**: marked.js 渲染
-- **可视化**: [ECharts](https://echarts.apache.org/) 5.4.3 (力导向图)
+| 层次 | 技术 |
+|------|------|
+| Web 框架 | FastAPI 0.109.0 + Uvicorn |
+| LLM 框架 | LangChain + LangGraph（ReAct 架构） |
+| LLM Provider | OpenAI / 阿里云通义千问（兼容 OpenAI API） |
+| 图数据库 | Neo4j 5.x + langchain-neo4j（GraphCypherQAChain） |
+| 文档数据库 | MongoDB（Motor 异步驱动）+ LangGraph Checkpoint |
+| 认证 | PyJWT + bcrypt |
+| 搜索 | Tavily API + DuckDuckGo |
+| 爬虫 | BeautifulSoup4 + Requests |
+| 前端 | Vanilla JS + SSE + ECharts 5.4.3（力导向图） |
+| 配置 | pydantic-settings + python-dotenv |
 
 ---
 
-## 📦 项目结构
+## 项目结构
 
 ```
 my-agent/
 ├── src/
-│   ├── api/                    # API 层
-│   │   ├── middleware/         # 中间件 (Auth, CORS)
-│   │   └── routes/             # 路由 (Chat, Auth, Complex Tasks, Industry)
-│   ├── core/                   # 核心业务逻辑
-│   │   ├── agent.py            # 主 Agent 实现
-│   │   ├── context/            # 上下文管理
-│   │   ├── sub_agent/          # Sub-Agent 编排系统
-│   │   ├── prompt/             # 系统提示词管理
-│   │   ── stream_manager.py   # 流式输出管理
-│   ├── tools/                  # 工具集
-│   │   ├── web_search.py       # Web 搜索工具
-│   │   ├── web_scraper.py      # 网页抓取工具
-│   │   ├── calculator.py       # 计算器工具
-│   │   ├── time.py             # 时间工具
-│   │   ── industry_graph.py   # 产业链图谱工具 (Neo4j)
-│   ├── skills/                 # Skills 插件系统
-│   │   ├── manager.py          # Skill 管理器
-│   │   └── */SKILL.md          # Skill 定义文件
-│   ├── storage/                # 存储层
-│   │   ├── mongodb.py          # MongoDB 连接管理
-│   │   ── neo4j.py            # Neo4j 图谱数据库
-│   ├── config.py               # 配置管理
-│   └── main.py                 # 应用入口
-├── static/                     # 静态资源文件
-│   ├── css/                    # 样式文件
-│   │   ├── styles.css          # 主样式
-│   │   ── login.css           # 登录页样式
-│   └── js/                     # JavaScript 文件
-│       ├── app.js              # 应用入口
-│       ├── chat.js             # 对话功能
-│       ├── message.js          # 消息处理
-│       ├── industry.js         # 产业链功能
-│       ── utils.js            # 工具函数
-├── tests/                      # 测试用例
-├── logs/                       # 日志文件
-├── index.html                  # 主界面 (模块化拆分后)
-├── login.html                  # 登录页面
-├── run.py                      # 启动脚本
-├── requirements.txt            # Python 依赖
-├── .env                        # 环境变量配置
-└── SKILLS_GUIDE.md             # Skills 使用指南
+│   ├── api/                      # API 层
+│   │   ├── middleware/           # 中间件（Auth、CORS）
+│   │   └── routes/               # 路由（chat、auth、complex_tasks）
+│   ├── core/                     # 核心业务逻辑
+│   │   ├── agent.py              # LangGraph ReAct Agent
+│   │   ├── context/              # 对话上下文管理
+│   │   ├── sub_agent/            # Sub-Agent 编排（decomposer/worker/synthesizer）
+│   │   ├── prompt/               # 系统提示词（结构化安全边界）
+│   │   ├── stream_manager.py     # 流式输出管理
+│   │   └── security.py           # 安全策略
+│   ├── tools/                    # 工具集
+│   │   ├── industry_graph.py     # 产业链语义查询工具（Neo4j）
+│   │   ├── web_search.py         # Web 搜索（Tavily + DuckDuckGo）
+│   │   ├── web_scraper.py        # 网页抓取
+│   │   ├── calculator.py         # 计算器
+│   │   └── time.py               # 时间工具
+│   ├── skills/                   # Skills 插件系统
+│   │   ├── manager.py            # Skill 自动加载管理器
+│   │   └── */SKILL.md            # Skill 定义文件
+│   ├── storage/                  # 存储层
+│   │   ├── mongodb.py            # MongoDB 连接（会话持久化）
+│   │   └── neo4j.py              # Neo4j 管理器（数据导入 + 语义查询）
+│   ├── config.py                 # pydantic-settings 配置
+│   └── main.py                   # FastAPI 应用入口
+├── static/                       # 静态资源
+│   ├── css/                      # 样式（styles.css、login.css）
+│   ├── html/                     # 模块化 HTML 片段
+│   └── js/                       # JS（app、chat、message、login、utils）
+├── scripts/
+│   └── import_industry_chains.py # 产业链 Excel 数据导入脚本
+├── tests/                        # 测试用例
+├── index.html                    # 主界面
+├── login.html                    # 登录页面
+├── run.py                        # 启动脚本
+├── requirements.txt              # Python 依赖
+└── .env                          # 环境变量配置
 ```
 
 ---
 
-##  测试
-
-```bash
-# 运行所有测试
-python -m pytest tests/ -v
-
-# 运行特定测试
-python tests/test_agent.py
-python tests/test_skills.py
-python tests/test_stream.py
-```
-
----
-
-## 📝 开发指南
+## 开发指南
 
 ### 添加新工具
 
@@ -466,107 +419,88 @@ python tests/test_stream.py
 from src.tools.base import BaseTool
 
 class MyTool(BaseTool):
-    name = "my_tool"
-    description = "我的工具描述"
-    
-    async def execute(self, **kwargs):
-        # 实现工具逻辑
-        return {"result": "success"}
+    def __init__(self):
+        super().__init__()
+        self.name = "my_tool"
+        self.description = "工具描述"
+        self.parameters = {
+            "type": "object",
+            "properties": {
+                "input": {"type": "string", "description": "输入参数"}
+            },
+            "required": ["input"],
+        }
 
-# 在 __init__.py 中注册
-from src.tools.my_tool import MyTool
-tool_manager.register(MyTool())
+    async def execute(self, input: str, **kwargs) -> dict:
+        return {"success": True, "result": "..."}
 ```
+
+在 `agent.py` 的 `_init_tools` 中注册即可。
 
 ### 添加新 Skill
 
-参考 [Skills 系统](#-skills-系统) 章节,创建 `src/skills/my-skill/SKILL.md` 文件即可。
+创建 `src/skills/my-skill/SKILL.md` 文件，重启服务自动加载。
 
 ### 自定义上下文策略
 
 ```python
-# src/core/context/context.py
+# src/core/context/conversation.py
 class MyContextManager(SystemPromptContextManager):
-    def custom_strategy(self):
-        # 实现自定义上下文管理逻辑
+    def build_context(self):
+        # 自定义上下文构建逻辑
         pass
 ```
 
 ---
 
-## 📊 监控与日志
-
-### 日志配置
-
-```env
-LOG_LEVEL=INFO          # DEBUG, INFO, WARNING, ERROR
-LOG_TO_FILE=true        # 是否写入文件
-LOG_FILE_PATH=logs/agent.log
-JSON_FORMAT=false       # JSON 格式日志
-ENABLE_EMOJI=true       # 启用 Emoji 图标
-```
-
-### 日志查看
+## 测试
 
 ```bash
-# 实时查看日志
-tail -f logs/agent.log
+# 运行所有测试
+python -m pytest tests/ -v
 
-# 搜索特定日志
-grep "工具调用" logs/agent.log
+# 运行特定测试
+python tests/test_agent.py
+python tests/test_stream.py
 ```
 
 ---
 
-## 🤝 贡献指南
+## 贡献指南
 
-欢迎提交 Issue 和 Pull Request!
+欢迎提交 Issue 和 Pull Request！
 
 1. Fork 本仓库
-2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
+2. 创建功能分支（`git checkout -b feature/AmazingFeature`）
+3. 提交更改（`git commit -m 'Add AmazingFeature'`）
+4. 推送到分支（`git push origin feature/AmazingFeature`）
 5. 提交 Pull Request
 
 ---
 
-
-
 ## 🙏 技术参考
 
-本项目在开发过程中参考了以下开源项目的优秀设计理念:
-
-- **LangChain** - LLM 应用开发框架
-- **LangGraph** - 状态图编排框架
-- **FastAPI** - 现代 Web 框架
-- **Agent Skills 规范** - 插件化技能系统设计
-
----
-
-<p align="center">
-  <strong>⭐ 如果这个项目对你有帮助,请给个 Star 支持一下!</strong>
-</p>
+- **LangChain** — LLM 应用开发框架
+- **LangGraph** — 状态图编排框架
+- **FastAPI** — 现代异步 Web 框架
+- **Neo4j** — 图数据库
+- **Agent Skills 规范** — 插件化技能系统设计
 
 ---
 
 ## ⚠️ 免责声明
 
-**本项目仅供学习和研究使用,请勿用于任何违法用途。**
+**本项目仅供学习和研究使用，请勿用于任何违法用途。**
 
-### 责任声明
+1. **使用风险**：用户使用本项目产生的任何直接或间接损失，本项目不承担任何责任
+2. **内容准确性**：AI 生成的内容可能存在不准确、不完整或过时的情况，用户应自行核实
+3. **数据隐私**：用户应妥善保管 API Key、数据库凭证等敏感信息，避免泄露
+4. **合规使用**：使用本项目时应遵守当地法律法规，不得用于任何违法违规行为
+5. **第三方服务**：本项目依赖的第三方服务（OpenAI、Tavily 等）的使用条款由其提供方制定
+6. **无担保**：本项目按"现状"提供，不提供任何形式的明示或暗示担保
 
-1. **使用风险**: 用户在使用本项目时产生的任何直接或间接损失,本项目不承担任何责任
-2. **内容准确性**: AI 生成的内容可能存在不准确、不完整或过时的情况,用户应自行核实
-3. **数据隐私**: 用户应妥善保管自己的 API Key、数据库凭证等敏感信息,避免泄露
-4. **合规使用**: 用户在使用本项目时应遵守当地法律法规,不得用于任何违法违规行为
-5. **第三方服务**: 本项目依赖的第三方服务(如 OpenAI、Tavily 等)的使用条款由其提供方制定,用户应自行遵守
-6. **无担保**: 本项目按"现状"提供,不提供任何形式的明示或暗示担保,包括但不限于适销性、特定用途适用性等
+---
 
-### 使用建议
-
-- ✅ 用于学习 AI Agent 开发技术
-- ✅ 用于个人项目和技术研究
-- ✅ 用于内部测试和原型验证
-- ❌ 不要用于生产环境的关键业务
-- ❌ 不要存储敏感或个人隐私数据
--  不要用于生成虚假或有害内容
+<p align="center">
+  <strong>⭐ 如果这个项目对你有帮助，请给个 Star 支持一下！</strong>
+</p>
