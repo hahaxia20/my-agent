@@ -87,6 +87,7 @@ async function sendNormalMessage(message, contentDiv, sendBtn, token) {
                     if (!currentSessionId) {
                         currentSessionId = sessionId;
                         await loadSessions();
+                        showChatTitleForCurrentSession();
                     }
                 } else {
                     fullText += data;
@@ -259,6 +260,7 @@ async function sendComplexTask(message, contentDiv, sendBtn, token) {
                             if (finalResult.session_id && !currentSessionId) {
                                 currentSessionId = finalResult.session_id;
                                 await loadSessions();
+                                showChatTitleForCurrentSession();
                             }
                             
                             scrollToBottom();
