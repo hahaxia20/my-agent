@@ -231,7 +231,9 @@ function renderSessionList() {
 // 创建新对话
 async function createNewSession() {
     currentSessionId = null;
-    document.getElementById('chatTitle').textContent = '新对话';
+    const chatTitleEl = document.getElementById('chatTitle');
+    chatTitleEl.style.display = 'none';
+    chatTitleEl.textContent = '';
     
     // 显示完整的留白区域
     const chatContainer = document.getElementById('chatContainer');
@@ -278,7 +280,9 @@ async function selectSession(sessionId) {
 
         const session = await response.json();
 
-        document.getElementById('chatTitle').textContent = session.title;
+        const chatTitleEl = document.getElementById('chatTitle');
+        chatTitleEl.textContent = session.title;
+        chatTitleEl.style.display = 'block';
 
         const container = document.getElementById('chatContainer');
         container.innerHTML = '';
@@ -320,6 +324,17 @@ async function deleteSession(sessionId) {
         await loadSessions();
     } catch (error) {
         console.error('删除会话失败:', error);
+    }
+}
+
+// 根据当前会话显示标题
+function showChatTitleForCurrentSession() {
+    if (!currentSessionId) return;
+    const session = sessions.find(s => s.session_id === currentSessionId);
+    if (session) {
+        const chatTitleEl = document.getElementById('chatTitle');
+        chatTitleEl.textContent = session.title;
+        chatTitleEl.style.display = 'block';
     }
 }
 

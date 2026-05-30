@@ -16,18 +16,15 @@
 
 # 标准库
 import asyncio
-import inspect
 import logging
 import time
 from datetime import datetime
-from functools import wraps
 from typing import List, Dict, Any, Optional, AsyncIterator, cast
 
 # 第三方库
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import StructuredTool
-from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.mongodb import MongoDBSaver
 from langsmith import traceable
@@ -42,20 +39,20 @@ from src.core.stream_manager import (
     StreamBuffer, StreamFormatter, StreamMetrics,
     StreamChunk, StreamEventType, StreamCypherFilter
 )
-from src.core.security import InputSecurityFilter, OutputSecurityFilter
+from src.core.security import InputSecurityFilter
+from src.core.tool_adapter import (
+    safe_truncate as _safe_truncate,
+    convert_to_langchain_tool, get_tool_type
+)
 from src.storage.mongodb import get_mongodb
 from src.tools.manager import tool_manager
 from src.skills.manager import skill_registry
 from src.core.sub_agent import SubAgentOrchestrator
-from src.core.sub_agent.models import SubAgentConfig, OrchestratorResult
+from src.core.sub_agent.models import SubAgentConfig
 
 # 日志初始化 (注意: 只在主入口调用 setup_logging)
 logger = logging.getLogger(__name__)
 
-
-# ═══════════════════════════════════════════════════════════
-# 2. 配置模型
-# ═══════════════════════════════════════════════════════════
 
 class AgentConfig(BaseModel):
     """Agent 运行时配置"""
@@ -77,77 +74,8 @@ class AgentConfig(BaseModel):
     enable_checkpoint: bool = Field(default=True, description="启用检查点持久化")
     debug: bool = Field(default=False, description="调试模式")
 
-
 # ═══════════════════════════════════════════════════════════
-# 3. 工具函数与装饰器
-# ═══════════════════════════════════════════════════════════
-
-def _safe_truncate(text: str, max_length: int = 500) -> str:
-    """安全截断文本，避免日志过长"""
-    if len(text) <= max_length:
-        return text
-    return text[:max_length] + "..."
-
-
-def log_tool_call(tool_name: str):
-    """
-    工具调用日志装饰器
-    自动记录工具调用的开始、成功/失败、耗时等信息
-    """
-    def decorator(func):
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            start_time = time.time()
-            logger.info(f"🔧 [工具调用开始] {tool_name} - 参数: {_safe_truncate(str(kwargs), 200)}")
-            
-            try:
-                result = await func(*args, **kwargs)
-                elapsed = time.time() - start_time
-                logger.info(
-                    f"✅ [工具调用成功] {tool_name} - "
-                    f"耗时: {elapsed:.2f}s - "
-                    f"结果长度: {len(str(result))} 字符"
-                )
-                return result
-            except Exception as e:
-                elapsed = time.time() - start_time
-                logger.error(
-                    f"❌ [工具调用失败] {tool_name} - "
-                    f"耗时: {elapsed:.2f}s - "
-                    f"错误: {str(e)}",
-                    exc_info=True
-                )
-                raise
-        
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            start_time = time.time()
-            logger.info(f"🔧 [工具调用开始] {tool_name} - 参数: {_safe_truncate(str(kwargs), 200)}")
-            
-            try:
-                result = func(*args, **kwargs)
-                elapsed = time.time() - start_time
-                logger.info(
-                    f"✅ [工具调用成功] {tool_name} - "
-                    f"耗时: {elapsed:.2f}s - "
-                    f"结果长度: {len(str(result))} 字符"
-                )
-                return result
-            except Exception as e:
-                elapsed = time.time() - start_time
-                logger.error(
-                    f"❌ [工具调用失败] {tool_name} - "
-                    f"耗时: {elapsed:.2f}s - "
-                    f"错误: {str(e)}",
-                    exc_info=True
-                )
-                raise
-        
-        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-    return decorator
-
-# ═══════════════════════════════════════════════════════════
-# 4. MyAgent 核心类
+# MyAgent 核心类
 # ═══════════════════════════════════════════════════════════
 
 class MyAgent:
@@ -262,123 +190,14 @@ class MyAgent:
 
         for tool in self.tool_manager.get_all():
             try:
-                langchain_tool = self._convert_to_langchain_tool(tool)
+                langchain_tool = convert_to_langchain_tool(tool)
                 tools.append(langchain_tool)
-                logger.info(f"✅ 注册工具: {tool.name} (类型: {self._get_tool_type(tool)}, has_schema: {hasattr(langchain_tool, 'args_schema')})")
+                logger.info(f"✅ 注册工具: {tool.name} (类型: {get_tool_type(tool)}, has_schema: {hasattr(langchain_tool, 'args_schema')})")
             except Exception as e:
                 logger.error(f" 注册工具失败 {tool.name}: {e}", exc_info=True)
 
         # 注意: Skill 不再转换为工具，而是通过 SkillMiddleware 提供
         return tools
-
-    def _get_tool_type(self, tool) -> str:
-        """获取工具类型 (async/sync)"""
-        if hasattr(tool, 'execute'):
-            if inspect.iscoroutinefunction(tool.execute):
-                return "async"
-            else:
-                return "sync"
-        return "unknown"
-
-    def _convert_to_langchain_tool(self, tool) -> StructuredTool:
-        """
-        将自定义工具转换为 LangChain StructuredTool
-        支持异步和同步工具，自动添加日志装饰器
-        """
-        tool_name = tool.name
-
-        # 如果工具自带转换方法，直接使用
-        if hasattr(tool, 'to_langchain_tool'):
-            logger.debug(f"使用工具自带的转换方法: {tool_name}")
-            return tool.to_langchain_tool()
-
-        # 异步工具
-        if hasattr(tool, 'execute') and inspect.iscoroutinefunction(tool.execute):
-            @log_tool_call(tool_name)
-            async def logged_execute(**kwargs):
-                logger.debug(f"执行异步工具 {tool_name}, kwargs: {kwargs}")
-                return await tool.execute(**kwargs)
-
-            # 如果有 parameters，创建 args_schema
-            args_schema = None
-            if hasattr(tool, 'parameters') and tool.parameters:
-                from pydantic import create_model, Field
-                from typing import Optional
-                
-                fields = {}
-                for param_name, param_info in tool.parameters.get('properties', {}).items():
-                    field_type = str
-                    if param_info.get('type') == 'integer':
-                        field_type = int
-                    elif param_info.get('type') == 'number':
-                        field_type = float
-                    elif param_info.get('type') == 'boolean':
-                        field_type = bool
-                    
-                    is_required = param_name in tool.parameters.get('required', [])
-                    if is_required:
-                        fields[param_name] = (field_type, Field(description=param_info.get('description', '')))
-                    else:
-                        fields[param_name] = (Optional[field_type], Field(default=None, description=param_info.get('description', '')))
-                
-                if fields:
-                    args_schema = create_model(f"{tool_name.title()}Schema", **fields)
-                    logger.debug(f"为工具 {tool_name} 创建 args_schema: {list(fields.keys())}")
-
-            structured_tool = StructuredTool(
-                name=tool_name,
-                description=tool.description,
-                coroutine=logged_execute,
-                args_schema=args_schema
-            )
-            
-            logger.debug(f"工具 {tool_name}: name={structured_tool.name}, has_args_schema={structured_tool.args_schema is not None}")
-            return structured_tool
-        
-        # 同步工具
-        elif hasattr(tool, 'execute'):
-            @log_tool_call(tool_name)
-            def logged_execute(**kwargs):
-                logger.debug(f"执行同步工具 {tool_name}, kwargs: {kwargs}")
-                return tool.execute(**kwargs)
-
-            # 如果有 parameters，创建 args_schema
-            args_schema = None
-            if hasattr(tool, 'parameters') and tool.parameters:
-                from pydantic import create_model, Field
-                from typing import Optional
-                
-                fields = {}
-                for param_name, param_info in tool.parameters.get('properties', {}).items():
-                    field_type = str
-                    if param_info.get('type') == 'integer':
-                        field_type = int
-                    elif param_info.get('type') == 'number':
-                        field_type = float
-                    elif param_info.get('type') == 'boolean':
-                        field_type = bool
-                    
-                    is_required = param_name in tool.parameters.get('required', [])
-                    if is_required:
-                        fields[param_name] = (field_type, Field(description=param_info.get('description', '')))
-                    else:
-                        fields[param_name] = (Optional[field_type], Field(default=None, description=param_info.get('description', '')))
-                
-                if fields:
-                    args_schema = create_model(f"{tool_name.title()}Schema", **fields)
-                    logger.debug(f"为工具 {tool_name} 创建 args_schema: {list(fields.keys())}")
-
-            structured_tool = StructuredTool(
-                name=tool_name,
-                description=tool.description,
-                func=logged_execute,
-                args_schema=args_schema
-            )
-            
-            logger.debug(f"工具 {tool_name}: name={structured_tool.name}, has_args_schema={structured_tool.args_schema is not None}")
-            return structured_tool
-        else:
-            raise ValueError(f"工具 {tool_name} 没有 execute 方法")
 
     def _record_tool_call(self, tool_name: str, duration: float, success: bool = True):
         """记录工具调用统计信息"""
@@ -417,7 +236,7 @@ class MyAgent:
             # 注册图谱智能查询工具
             tool = SmartGraphQueryTool()
             self.tool_manager.register(tool)
-            langchain_tool = self._convert_to_langchain_tool(tool)
+            langchain_tool = convert_to_langchain_tool(tool)
             self.tools.append(langchain_tool)
             logger.info(f"✅ 注册图谱工具: {tool.name}")
 
@@ -477,7 +296,69 @@ class MyAgent:
         return orchestrator
 
     # ───────────────────────────────────────────────────────
-    # 4.3 核心方法: 对话处理
+    # 4.3 公共辅助方法
+    # ───────────────────────────────────────────────────────
+
+    def _check_input_security(self, user_query: str, session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        检查输入安全性
+        
+        Returns:
+            None 表示安全通过；返回 dict 表示拦截响应
+        """
+        security_result = InputSecurityFilter.check_input(user_query)
+        if not security_result.is_safe:
+            logger.warning(f"🚨 [安全拦截] {security_result.reason}")
+            return {
+                "reply": "抱歉，您的请求包含了不安全的内容，我无法处理。",
+                "session_id": session_id,
+                "success": False,
+                "error": "security_violation",
+                "security_reason": security_result.reason
+            }
+        elif security_result.risk_level == "medium":
+            logger.info(f"⚠️ [安全警告] {security_result.reason}")
+        return None
+
+    async def _ensure_session(self, session_id: Optional[str], user_id: str, title: str) -> str:
+        """确保会话存在，不存在则创建"""
+        if not session_id:
+            session_id = await self.db.create_session(user_id=user_id, title=title)
+            logger.info(f"📝 创建新会话: {session_id}")
+        return session_id
+
+    @staticmethod
+    def _format_subtask_results(sub_agent_results) -> List[Dict[str, Any]]:
+        """格式化子任务结果列表（用于 DB 元数据和 API 响应）"""
+        return [
+            {
+                "task_id": r.task_id,
+                "task_name": r.task_id,
+                "status": r.status.value,
+                "duration": r.duration,
+                "result_length": len(r.result) if r.result else 0,
+                "result_preview": r.result[:200] if r.result else None
+            }
+            for r in sub_agent_results
+        ]
+
+    @staticmethod
+    def _format_stream_error(error: Exception) -> str:
+        """根据错误类型返回友好的流式错误提示"""
+        error_msg = str(error)
+        if "403" in error_msg or "PermissionDenied" in error_msg:
+            if "free tier" in error_msg.lower() or "quota" in error_msg.lower():
+                return "\n❌ API 额度已用完，请检查你的 API Key 配置或联系管理员。"
+            return "\n❌ API 访问被拒绝，请检查 API Key 是否正确。"
+        elif "401" in error_msg or "Authentication" in error_msg:
+            return "\n❌ API Key 无效，请检查配置。"
+        elif "429" in error_msg or "rate limit" in error_msg.lower():
+            return "\n⏳ 请求过于频繁，请稍后重试。"
+        else:
+            return f"\n抱歉，出现错误：{error_msg[:200]}"
+
+    # ───────────────────────────────────────────────────────
+    # 4.4 核心方法: 对话处理
     # ───────────────────────────────────────────────────────
 
     @retry(
@@ -509,29 +390,13 @@ class MyAgent:
         logger.info(f"💬 [对话开始] session_id={session_id}, user_id={user_id}")
         logger.debug(f"   用户查询: {_safe_truncate(user_query, 500)}")
 
-        # 🔒 安全检查：防止 Prompt Injection
-        security_result = InputSecurityFilter.check_input(user_query)
-        if not security_result.is_safe:
-            logger.warning(f"🚨 [安全拦截] {security_result.reason}")
-            return {
-                "reply": "抱歉，您的请求包含了不安全的内容，我无法处理。",
-                "session_id": session_id,
-                "success": False,
-                "error": "security_violation",
-                "security_reason": security_result.reason
-            }
-        elif security_result.risk_level == "medium":
-            logger.info(f"⚠️ [安全警告] {security_result.reason}")
+        # 🔒 安全检查
+        security_block = self._check_input_security(user_query, session_id)
+        if security_block:
+            return security_block
 
         request_start = time.time()
-
-        # 创建或复用会话
-        if not session_id:
-            session_id = await self.db.create_session(
-                user_id=user_id,
-                title=user_query[:30]
-            )
-            logger.info(f"📝 创建新会话: {session_id}")
+        session_id = await self._ensure_session(session_id, user_id, user_query[:30])
 
         # 构建 Runnable 配置
         config = self._build_runnable_config(session_id, user_id, metadata)
@@ -696,29 +561,13 @@ class MyAgent:
         """
         logger.info(f"🎭 [复杂任务] 开始处理: {user_query[:100]}...")
         
-        # 🔒 安全检查：防止 Prompt Injection
-        security_result = InputSecurityFilter.check_input(user_query)
-        if not security_result.is_safe:
-            logger.warning(f"🚨 [安全拦截] {security_result.reason}")
-            return {
-                "reply": "抱歉，您的请求包含了不安全的内容，我无法处理。",
-                "session_id": session_id,
-                "success": False,
-                "error": "security_violation",
-                "security_reason": security_result.reason
-            }
-        elif security_result.risk_level == "medium":
-            logger.info(f"⚠️ [安全警告] {security_result.reason}")
+        # 🔒 安全检查
+        security_block = self._check_input_security(user_query, session_id)
+        if security_block:
+            return security_block
         
         request_start = time.time()
-        
-        # 创建或复用会话
-        if not session_id:
-            session_id = await self.db.create_session(
-                user_id=user_id,
-                title=f"[复杂] {user_query[:20]}"
-            )
-            logger.info(f"📝 创建新会话: {session_id}")
+        session_id = await self._ensure_session(session_id, user_id, f"[复杂] {user_query[:20]}")
         
         try:
             # 使用 Sub-Agent 编排器执行
@@ -735,20 +584,13 @@ class MyAgent:
             # 保存到数据库
             await self.db.add_message(session_id, "user", user_query)
             
+            # 格式化子任务结果
+            sub_tasks = self._format_subtask_results(result.sub_agent_results)
+            
             # 保存 AI 回复，并附加子任务元数据
             subtask_metadata = {
                 "is_complex_task": True,
-                "sub_tasks": [
-                    {
-                        "task_id": r.task_id,
-                        "task_name": r.task_id,
-                        "status": r.status.value,
-                        "duration": r.duration,
-                        "result_length": len(r.result) if r.result else 0,
-                        "result_preview": r.result[:200] if r.result else None
-                    }
-                    for r in result.sub_agent_results
-                ],
+                "sub_tasks": sub_tasks,
                 "total_duration": result.total_duration,
                 "parallel_efficiency": result.parallel_efficiency,
                 "decomposition_strategy": result.decomposition.decomposition_strategy if result.decomposition else None
@@ -773,17 +615,7 @@ class MyAgent:
                 "session_id": session_id,
                 "success": result.success,
                 "elapsed_time": elapsed,
-                "sub_tasks": [
-                    {
-                        "task_id": r.task_id,
-                        "task_name": r.task_id,  # 添加 task_name
-                        "status": r.status.value,
-                        "duration": r.duration,
-                        "result_length": len(r.result) if r.result else 0,  # 添加 result_length
-                        "result_preview": r.result[:200] if r.result else None
-                    }
-                    for r in result.sub_agent_results
-                ],
+                "sub_tasks": sub_tasks,
                 "metadata": {
                     "total_duration": result.total_duration,
                     "parallel_efficiency": result.parallel_efficiency,
@@ -820,26 +652,18 @@ class MyAgent:
         logger.info(f"🌊 [流式对话开始] session_id={session_id}, user_id={user_id}")
         logger.debug(f"   用户查询: {_safe_truncate(user_query, 500)}")
 
-        # 🔒 安全检查：防止 Prompt Injection
-        security_result = InputSecurityFilter.check_input(user_query)
-        if not security_result.is_safe:
-            logger.warning(f"🚨 [安全拦截] {security_result.reason}")
-            yield "抱歉，您的请求包含了不安全的内容，我无法处理。"
+        # 🔒 安全检查
+        security_block = self._check_input_security(user_query, session_id)
+        if security_block:
+            yield security_block["reply"]
             return
-        elif security_result.risk_level == "medium":
-            logger.info(f"⚠️ [安全警告] {security_result.reason}")
 
         request_start = time.time()
         metrics = StreamMetrics() if enable_metrics else None
         if metrics:
             metrics.start()
 
-        if not session_id:
-            session_id = await self.db.create_session(
-                user_id=user_id,
-                title=user_query[:30]
-            )
-            logger.info(f"📝 创建新会话: {session_id}")
+        session_id = await self._ensure_session(session_id, user_id, user_query[:30])
 
         buffer = StreamBuffer(max_size=buffer_size, flush_interval=flush_interval)
 
@@ -854,27 +678,23 @@ class MyAgent:
         total_tokens = {"prompt": 0, "completion": 0, "total": 0}
         current_tool = None
         tool_start_time = None
-        cypher_filter = StreamCypherFilter()  # Cypher 泄漏过滤器
+        cypher_filter = StreamCypherFilter()
 
         try:
             async with self._semaphore:
                 request_start = time.time()
                 logger.info(f"🚀 开始流式处理: {session_id}")
 
-                # 记录本次请求使用的工具/技能
                 used_tools = []
                 used_skills = []
-
                 llm_start = time.time()
+                llm_first_token_logged = False
                 logger.info(f"️ [性能] 开始调用 LLM...")
                 
-                # 使用对话上下文管理器加载历史消息
                 input_messages = await self.conversation_context.load_context(
                     session_id=session_id,
                     current_message=user_query
                 )
-                
-                # 记录上下文统计信息
                 stats = self.conversation_context.get_context_stats(input_messages)
                 logger.info(f"📊 流式对话上下文统计: {stats}")
                 
@@ -883,15 +703,15 @@ class MyAgent:
                     config=config,
                     version="v2"
                 ):
-                    # 处理 LLM 输出
-                    if event["event"] == "on_chat_model_stream":
-                        if 'llm_first_token_time' not in locals():
-                            llm_first_token_time = time.time()
-                            logger.info(f"⏱️ [性能] LLM 首字耗时: {llm_first_token_time - llm_start:.2f}s")
+                    event_type = event["event"]
+
+                    # ── LLM 流式输出 ──
+                    if event_type == "on_chat_model_stream":
+                        if not llm_first_token_logged:
+                            llm_first_token_logged = True
+                            logger.info(f"⏱️ [性能] LLM 首字耗时: {time.time() - llm_start:.2f}s")
                         
                         chunk = event["data"]["chunk"]
-                        
-                        # 记录 token 消耗
                         usage_metadata = getattr(chunk, 'usage_metadata', None)
                         if usage_metadata:
                             total_tokens["prompt"] = usage_metadata.get("input_tokens", 0)
@@ -899,34 +719,25 @@ class MyAgent:
                             total_tokens["total"] = usage_metadata.get("total_tokens", 0)
                         
                         is_empty = not chunk.content or not chunk.content.strip()
-
                         if metrics:
                             metrics.record_chunk(chunk.content or "", is_empty)
 
                         if chunk.content and chunk.content.strip():
-                            # Cypher 过滤：剥离底层查询语句，只保留自然语言
                             filtered = cypher_filter.process(chunk.content)
                             if not filtered or not filtered.strip():
                                 continue
-
-                            buffered = buffer.add(StreamChunk(
-                                type=StreamEventType.TEXT,
-                                content=filtered
-                            ))
-
+                            buffered = buffer.add(StreamChunk(type=StreamEventType.TEXT, content=filtered))
                             if buffered:
                                 full_response += buffered
                                 yield buffered
 
-                    # 处理工具调用开始
-                    elif event["event"] == "on_tool_start":
+                    # ── 工具调用开始 ──
+                    elif event_type == "on_tool_start":
                         tool_name = event.get('name', 'unknown')
                         tool_start_time = time.time()
                         current_tool = tool_name
 
-                        # 记录使用的工具
                         if tool_name == "load_skill":
-                            # 从参数中提取技能名
                             tool_input = event.get('data', {}).get('input', {})
                             skill_name = tool_input.get('skill_name', '') if isinstance(tool_input, dict) else ''
                             if skill_name and skill_name not in used_skills:
@@ -946,53 +757,33 @@ class MyAgent:
                         if buffered:
                             full_response += buffered
                             yield buffered
+                        yield f"\n🔧 正在调用工具: **{tool_name}**...\n"
 
-                        tool_msg = f"\n🔧 正在调用工具: **{tool_name}**...\n"
-                        yield tool_msg
-
-                    # 处理工具调用结束
-                    elif event["event"] == "on_tool_end":
+                    # ── 工具调用结束 ──
+                    elif event_type == "on_tool_end":
                         elapsed = time.time() - (tool_start_time or time.time())
-
                         if current_tool:
-                            logger.info(
-                                f"✅ [工具调用完成] {current_tool} - "
-                                f"耗时: {elapsed:.2f}s"
-                            )
-                            logger.debug(
-                                f"   工具返回: {_safe_truncate(str(event.get('data', {}).get('output', '')), 300)}")
-
+                            logger.info(f"✅ [工具调用完成] {current_tool} - 耗时: {elapsed:.2f}s")
+                            logger.debug(f"   工具返回: {_safe_truncate(str(event.get('data', {}).get('output', '')), 300)}")
                             self._record_tool_call(current_tool, elapsed, success=True)
-
-                            tool_msg = f"\n✅ 工具 **{current_tool}** 调用完成 ({elapsed:.1f}s)\n"
-                            yield tool_msg
+                            yield f"\n✅ 工具 **{current_tool}** 调用完成 ({elapsed:.1f}s)\n"
                             current_tool = None
                             tool_start_time = None
 
-                    # 处理工具错误
-                    elif event["event"] == "on_tool_error":
+                    # ── 工具错误 ──
+                    elif event_type == "on_tool_error":
                         error = event.get('data', {}).get('error', '未知错误')
                         tool_name = event.get('name', 'unknown')
                         elapsed = time.time() - (tool_start_time or time.time())
-
-                        logger.error(
-                            f"❌ [工具调用失败] {tool_name} - "
-                            f"耗时: {elapsed:.2f}s - "
-                            f"错误: {str(error)}"
-                        )
+                        logger.error(f"❌ [工具调用失败] {tool_name} - 耗时: {elapsed:.2f}s - 错误: {str(error)}")
                         self._record_tool_call(tool_name, elapsed, success=False)
-                        tool_msg = f"\n❌ 工具 **{tool_name}** 调用失败\n"
-
-                        yield tool_msg
+                        yield f"\n❌ 工具 **{tool_name}** 调用失败\n"
                         current_tool = None
 
                 # 刷新 Cypher 过滤器剩余内容
                 cypher_remaining = cypher_filter.flush()
                 if cypher_remaining and cypher_remaining.strip():
-                    buffered = buffer.add(StreamChunk(
-                        type=StreamEventType.TEXT,
-                        content=cypher_remaining
-                    ))
+                    buffered = buffer.add(StreamChunk(type=StreamEventType.TEXT, content=cypher_remaining))
                     if buffered:
                         full_response += buffered
                         yield buffered
@@ -1006,19 +797,16 @@ class MyAgent:
                 total_elapsed = time.time() - request_start
                 logger.info(
                     f"✅ [流式对话完成] session={session_id} - "
-                    f"总耗时: {total_elapsed:.2f}s - "
-                    f"回复长度: {len(full_response)} 字符"
+                    f"总耗时: {total_elapsed:.2f}s - 回复长度: {len(full_response)} 字符"
                 )
 
-                # 打印本次请求使用的工具/技能汇总
                 if used_tools or used_skills:
-                    logger.info(f"📊 [本次调用] 工具: {used_tools if used_tools else '无'}, 技能: {used_skills if used_skills else '无'}")
+                    logger.info(f"📊 [本次调用] 工具: {used_tools or '无'}, 技能: {used_skills or '无'}")
 
                 if metrics and self.config.debug:
                     metrics.finish()
                     stats = metrics.get_stats()
                     logger.info(f"📊 [流式统计] 会话:{session_id} - {stats}")
-
                     if stats.get('tools_called'):
                         yield f"\n\n📊 调用的工具: {', '.join(stats['tools_called'])}"
                     if stats.get('skills_called'):
@@ -1034,7 +822,6 @@ class MyAgent:
 
             tools_called = metrics.get_tool_names() if metrics else []
             skills_called = metrics.get_skill_names() if metrics else []
-
             metadata = StreamFormatter.format_metadata(
                 session_id=session_id,
                 chunk_count=metrics.chunk_count if metrics else 0,
@@ -1056,20 +843,7 @@ class MyAgent:
             logger.error(f"💥 [流式错误] {e}", exc_info=True)
             if metrics:
                 metrics.record_error()
-            
-            # 友好的错误提示
-            error_msg = str(e)
-            if "403" in error_msg or "PermissionDenied" in error_msg:
-                if "free tier" in error_msg.lower() or "quota" in error_msg.lower():
-                    yield "\n❌ API 额度已用完，请检查你的 API Key 配置或联系管理员。"
-                else:
-                    yield "\n❌ API 访问被拒绝，请检查 API Key 是否正确。"
-            elif "401" in error_msg or "Authentication" in error_msg:
-                yield "\n❌ API Key 无效，请检查配置。"
-            elif "429" in error_msg or "rate limit" in error_msg.lower():
-                yield "\n⏳ 请求过于频繁，请稍后重试。"
-            else:
-                yield f"\n抱歉，出现错误：{str(e)[:200]}"
+            yield self._format_stream_error(e)
 
     # ========== 会话管理 ==========
 

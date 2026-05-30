@@ -259,8 +259,16 @@ body {
 }
 
 .header-left h2 {
-    font-size: 18px;
-    color: #333;
+    font-size: 13px;
+    color: #667eea;
+    background: #eef1ff;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-weight: 500;
+    white-space: nowrap;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* 模式切换器 */
