@@ -10,7 +10,6 @@
   <a href="#架构设计">架构</a> •
   <a href="#api-文档">API</a> •
   <a href="#产业链图谱">产业链图谱</a> •
-  <a href="#skills-系统">Skills</a> •
   <a href="#技术栈">技术栈</a>
 </p>
 
@@ -184,8 +183,9 @@ uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload
 | API 路由 | `src/api/routes/` | RESTful 接口（Chat、Auth、Complex Tasks） |
 | Agent 核心 | `src/core/agent.py` | LangGraph ReAct Agent，工具调用与上下文管理 |
 | Sub-Agent | `src/core/sub_agent/` | 复杂任务分解、并行执行、结果合成 |
-| 上下文管理 | `src/core/context/` | 对话历史压缩、重要性筛选 |
-| 系统提示词 | `src/core/prompt/` | 结构化安全边界提示词管理 |
+| 流式输出 | `src/core/stream/` | SSE 流式对话、Cypher 过滤、格式化 |
+| 上下文管理 | `src/core/context/` | 对话历史压缩、重要性筛选、系统提示词注入 |
+| 系统提示词 | `src/core/prompt/` | 多模型模板管理（default / qwen / gpt-4） |
 | 工具集 | `src/tools/` | Smart Graph Query、搜索、爬虫、计算器等 |
 | Skills | `src/skills/` | 插件化技能系统，Markdown 配置热加载 |
 | 存储层 | `src/storage/` | MongoDB（会话持久化）、Neo4j（产业链图谱） |
@@ -267,7 +267,7 @@ DELETE /api/v1/sessions/{id}     # 删除会话
 |---------|------|------|
 | `IndustryChain` | `name` | 产业链主节点（氢能、核能、量子科技等） |
 | `Segment` | `sid`, `name`, `sequence`, `position`, `chain` | 产业链环节 |
-| `Position` | `name` | 位置标签（上游/中游/下游） |
+| `Position` | `name` | 位置标签（上游 / 中游 / 下游 / 消费） |
 | `IndustryCode` | `code`, `full_name` | 国家行业分类小类代码 |
 
 | 关系类型 | 方向 | 说明 |
@@ -315,11 +315,12 @@ Skills 是基于 Markdown 配置的插件化能力扩展系统，无需编写代
 
 ```
 src/skills/
-├── web-content-analyzer/    # 网页内容分析 Skill
+├── manager.py              # Skill 自动加载管理器
+├── middleware.py           # Skill 中间件（运行时注入提示词）
+├── web-content-analyzer/   # 网页内容分析 Skill
 │   └── SKILL.md
-├── data-analysis/           # 数据分析 Skill
-│   └── SKILL.md
-└── knowledge-qa/            # 知识问答 Skill
+└── data-analysis/          # 数据分析 Skill
+    └── SKILL.md
 ```
 
 ### 创建新 Skill
@@ -370,42 +371,65 @@ EOF
 ```
 my-agent/
 ├── src/
-│   ├── api/                      # API 层
-│   │   ├── middleware/           # 中间件（Auth、CORS）
-│   │   └── routes/               # 路由（chat、auth、complex_tasks）
-│   ├── core/                     # 核心业务逻辑
-│   │   ├── agent.py              # LangGraph ReAct Agent
-│   │   ├── context/              # 对话上下文管理
-│   │   ├── sub_agent/            # Sub-Agent 编排（decomposer/worker/synthesizer）
-│   │   ├── prompt/               # 系统提示词（结构化安全边界）
-│   │   ├── stream_manager.py     # 流式输出管理
-│   │   └── security.py           # 安全策略
-│   ├── tools/                    # 工具集
-│   │   ├── industry_graph.py     # 产业链语义查询工具（Neo4j）
-│   │   ├── web_search.py         # Web 搜索（Tavily + DuckDuckGo）
-│   │   ├── web_scraper.py        # 网页抓取
-│   │   ├── calculator.py         # 计算器
-│   │   └── time.py               # 时间工具
-│   ├── skills/                   # Skills 插件系统
-│   │   ├── manager.py            # Skill 自动加载管理器
-│   │   └── */SKILL.md            # Skill 定义文件
-│   ├── storage/                  # 存储层
-│   │   ├── mongodb.py            # MongoDB 连接（会话持久化）
-│   │   └── neo4j.py              # Neo4j 管理器（数据导入 + 语义查询）
-│   ├── config.py                 # pydantic-settings 配置
-│   └── main.py                   # FastAPI 应用入口
-├── static/                       # 静态资源
-│   ├── css/                      # 样式（styles.css、login.css）
-│   ├── html/                     # 模块化 HTML 片段
-│   └── js/                       # JS（app、chat、message、login、utils）
+│   ├── api/                          # API 层
+│   │   ├── middleware/               # 中间件（Auth、CORS）
+│   │   └── routes/                   # 路由（chat、auth、complex_tasks）
+│   ├── core/                         # 核心业务逻辑
+│   │   ├── agent.py                  # LangGraph ReAct Agent 主体
+│   │   ├── tool_adapter.py           # 工具适配器（BaseTool → LangChain StructuredTool）
+│   │   ├── security.py               # 安全策略（输入过滤、提示注入防护）
+│   │   ├── context/                  # 上下文管理
+│   │   │   ├── context.py            # 系统提示词上下文管理器
+│   │   │   └── conversation.py       # 对话历史上下文管理器
+│   │   ├── stream/                   # 流式输出
+│   │   │   ├── handler.py            # 流式对话处理器（SSE + Cypher 过滤）
+│   │   │   └── manager.py            # 流式格式化与 Cypher 检测
+│   │   ├── sub_agent/                # Sub-Agent 编排
+│   │   │   ├── decomposer.py         # 任务分解器
+│   │   │   ├── worker.py             # 子任务执行器
+│   │   │   ├── synthesizer.py        # 结果合成器
+│   │   │   └── orchestrator.py       # 编排主控制
+│   │   ├── prompt/                   # 系统提示词
+│   │   │   ├── manager.py            # 提示词管理器（按模型选择模板）
+│   │   │   ├── system_prompts.py     # 提示词加载器
+│   │   │   └── system_prompts_v1.0.json  # 提示词模板（default / qwen / gpt-4）
+│   │   ├── helpers/                  # 辅助工具
+│   │   │   ├── intent_classifier.py  # 意图分类器
+│   │   │   └── chat_helpers.py       # 聊天辅助函数
+│   │   └── logging/                  # 日志模块
+│   │       ├── config.py             # 日志配置
+│   │       └── decorator.py          # 日志装饰器
+│   ├── tools/                        # 工具集
+│   │   ├── base.py                   # BaseTool 基类
+│   │   ├── manager.py                # 工具管理器
+│   │   ├── industry_graph.py         # 产业链语义查询工具（Neo4j）
+│   │   ├── web_search.py             # Web 搜索（Tavily + DuckDuckGo）
+│   │   ├── web_scraper.py            # 网页抓取
+│   │   ├── calculator.py             # 计算器
+│   │   └── time.py                   # 时间工具
+│   ├── skills/                       # Skills 插件系统
+│   │   ├── manager.py                # Skill 自动加载管理器
+│   │   ├── middleware.py             # Skill 中间件（运行时注入提示词）
+│   │   └── */SKILL.md                # Skill 定义文件
+│   ├── storage/                      # 存储层
+│   │   ├── mongodb.py                # MongoDB 连接（会话持久化 + 检查点）
+│   │   └── neo4j.py                  # Neo4j 管理器（数据导入 + 语义查询）
+│   ├── config.py                     # pydantic-settings 配置
+│   └── main.py                       # FastAPI 应用入口
+├── static/                           # 静态资源
+│   ├── css/                          # 样式（styles.css、login.css）
+│   ├── html/                         # 模块化 HTML 片段
+│   └── js/                           # JS（app、chat、message、login、utils）
 ├── scripts/
-│   └── import_industry_chains.py # 产业链 Excel 数据导入脚本
-├── tests/                        # 测试用例
-├── index.html                    # 主界面
-├── login.html                    # 登录页面
-├── run.py                        # 启动脚本
-├── requirements.txt              # Python 依赖
-└── .env                          # 环境变量配置
+│   ├── import_industry_chains.py     # 产业链 Excel 数据导入脚本
+│   └── start_industry_graph.py       # 图谱服务启动脚本
+├── tests/                            # 测试用例
+├── .github/workflows/ci.yml          # GitHub Actions CI 配置
+├── index.html                        # 主界面
+├── login.html                        # 登录页面
+├── run.py                            # 启动脚本
+├── requirements.txt                  # Python 依赖
+└── .env                              # 环境变量配置
 ```
 
 ---
@@ -435,21 +459,11 @@ class MyTool(BaseTool):
         return {"success": True, "result": "..."}
 ```
 
-在 `agent.py` 的 `_init_tools` 中注册即可。
+在 `src/tools/manager.py` 中导入并注册即可自动加载。
 
 ### 添加新 Skill
 
 创建 `src/skills/my-skill/SKILL.md` 文件，重启服务自动加载。
-
-### 自定义上下文策略
-
-```python
-# src/core/context/conversation.py
-class MyContextManager(SystemPromptContextManager):
-    def build_context(self):
-        # 自定义上下文构建逻辑
-        pass
-```
 
 ---
 
@@ -459,9 +473,8 @@ class MyContextManager(SystemPromptContextManager):
 # 运行所有测试
 python -m pytest tests/ -v
 
-# 运行特定测试
-python tests/test_agent.py
-python tests/test_stream.py
+# 使用 pytest.ini 配置（已预设参数）
+python -m pytest
 ```
 
 ---
