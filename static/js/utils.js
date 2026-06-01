@@ -2,8 +2,8 @@
    My Agent - 工具函数
    ======================================== */
 
-// API 基础配置
-const API_BASE_URL = 'http://localhost:8001';
+// API 基础配置（空字符串表示同源，由 Nginx 代理转发）
+const API_BASE_URL = '';
 
 // 格式化时间
 function formatTime(timestamp) {

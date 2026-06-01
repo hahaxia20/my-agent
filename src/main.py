@@ -3,8 +3,10 @@ My Agent - 生产级 AI Agent 系统
 """
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+from pathlib import Path
 from src.config import get_settings_safe, print_config_summary, validate_config
 from src.api.middleware import setup_cors
 from src.api.routes import chat_router
@@ -95,6 +97,12 @@ def create_app() -> FastAPI:
     app.include_router(complex_tasks_router)
 
 
+    # 静态文件目录（相对于项目根目录）
+    base_dir = Path(__file__).resolve().parent.parent
+
+    # 挂载静态资源目录（css / js / html）
+    app.mount("/static", StaticFiles(directory=base_dir / "static"), name="static")
+
     # 健康检查
     @app.get("/health", tags=["health"])
     async def health_check():
@@ -105,15 +113,27 @@ def create_app() -> FastAPI:
             "version": settings.APP_VERSION
         }
 
-    # 根路径
-    @app.get("/", tags=["root"])
-    async def root():
-        """根路径"""
-        return {
-            "message": "Welcome to My Agent",
-            "docs": "/docs",
-            "health": "/health"
-        }
+    # 登录页
+    @app.get("/login", tags=["pages"])
+    async def login_page():
+        """登录页面"""
+        return FileResponse(base_dir / "login.html")
+
+    # 兼容旧路径：/login.html 重定向到 /login
+    @app.get("/login.html", tags=["pages"], include_in_schema=False)
+    async def login_html_redirect():
+        return RedirectResponse(url="/login")
+
+    # 根路径 → 主界面
+    @app.get("/", tags=["pages"])
+    async def index_page():
+        """主界面"""
+        return FileResponse(base_dir / "index.html")
+
+    # 兼容旧路径：/index.html 重定向到 /
+    @app.get("/index.html", tags=["pages"], include_in_schema=False)
+    async def index_html_redirect():
+        return RedirectResponse(url="/")
 
     # 全局异常处理
     @app.exception_handler(Exception)

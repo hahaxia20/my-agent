@@ -1,0 +1,45 @@
+# ═══════════════════════════════════════
+# My Agent 生产部署
+# ═══════════════════════════════════════
+# 使用方式：
+#   1. 确保 MongoDB、Neo4j 容器已在运行
+#   2. 修改 .env 中的连接地址（见下方说明）
+#   3. docker compose up --build -d
+#   4. 访问 http://localhost
+#
+# 连接已有的 MongoDB / Neo4j 容器：
+#   将 .env 中的 localhost 改为 host.docker.internal（Docker Desktop）
+#     MONGODB_URL=mongodb://admin:123456@host.docker.internal:27017
+#     NEO4J_URI=bolt://host.docker.internal:7687
+#
+# 或将 MongoDB / Neo4j 加入同一网络（推荐）：
+#   docker network create my-agent-net
+#   docker network connect my-agent-net <mongodb容器名>
+#   docker network connect my-agent-net <neo4j容器名>
+#   然后在本文件 networks 段引用 my-agent-net
+# ═══════════════════════════════════════
+
+services:
+  # ── FastAPI 后端 ──────────────────────────────
+  backend:
+    build: .
+    container_name: my-agent-backend
+    env_file: .env
+    expose:
+      - "8001"
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Nginx 反向代理 ────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: my-agent-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./static:/usr/share/nginx/html/static:ro
+    depends_on:
+      - backend
+    restart: unless-stopped

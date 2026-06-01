@@ -1,35 +1,39 @@
 # Web Framework
-fastapi==0.109.0
-uvicorn==0.27.0
+fastapi>=0.136.0
+uvicorn>=0.47.0
+gunicorn>=21.2.0
 
 # LLM & AI
-openai>=1.30.0,<2.0
-langgraph>=0.2.0,<1.0
-langchain-core>=0.3.0,<1.0
-langchain-openai>=0.2.0,<1.0
-langchain-neo4j>=0.2.0,<1.0
+langchain>=1.3.0
+langchain-core>=1.4.0
+langchain-openai>=1.2.0
+langchain-neo4j>=0.9.0
+langgraph>=1.2.0
+langgraph-checkpoint-mongodb>=0.4.0
+langsmith>=0.8.0
+openai>=2.30.0
 
 # Database
-motor==3.3.2
-pymongo==4.6.1
-neo4j==5.16.0
+motor>=3.7.0
+pymongo>=4.16.0
+neo4j>=6.2.0
 
 # Data Processing
-openpyxl==3.1.2
-pandas==2.1.4
+openpyxl>=3.1.5
+pandas>=3.0.0
 
 # Auth
-PyJWT==2.8.0
-bcrypt==4.1.2
+PyJWT>=2.13.0
+bcrypt>=5.0.0
 
 # Config & Utils
-python-dotenv==1.0.0
-pydantic==2.6.1
-pydantic-settings==2.1.0
-pyyaml==6.0.1
+python-dotenv>=1.2.0
+pydantic>=2.13.0
+pydantic-settings>=2.14.0
+pyyaml>=6.0.3
 
 # Tools
-tavily-python==0.3.1
-ddgs>=7.0.0,<8.0
-requests==2.31.0
-beautifulsoup4==4.12.3
+tavily-python>=0.7.0
+ddgs>=9.14.0
+requests>=2.34.0
+beautifulsoup4>=4.14.0

@@ -65,6 +65,7 @@
 - MongoDB 4.4+
 - Neo4j 5.x（产业链图谱功能）
 - OpenAI API Key（或兼容的 LLM API，如阿里云通义千问）
+- Docker + Docker Desktop（生产部署时需要）
 
 ### 安装步骤
 
@@ -115,18 +116,107 @@ CORS_ORIGINS=["https://yourdomain.com"]
 
 ### 启动服务
 
+#### 开发模式（本地运行）
+
 ```bash
 # 方式一：使用启动脚本
 python run.py
 
-# 方式二：uvicorn 直接启动（开发模式）
+# 方式二：uvicorn 直接启动
 uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 访问：
-- **前端界面**：浏览器打开 `index.html`
+- **主界面**：http://localhost:8001/
+- **登录页**：http://localhost:8001/login
 - **API 文档**：http://localhost:8001/docs
-- **健康检查**：http://localhost:8001/health
+
+#### 生产部署（Docker Compose）
+
+整体架构：
+
+```
+浏览器
+  │
+  ▼  :80
+Nginx（静态文件 + 反向代理）
+  ├── /static/*  → 直接返回（缓存 7 天）
+  ├── /api/*     → proxy_pass → backend:8001
+  └── /*         → proxy_pass → backend:8001（页面路由）
+                      │
+              FastAPI（Uvicorn × 2 workers）
+                      │
+        ┌─────────────┴─────────────┐
+        ▼                           ▼
+  MongoDB（宿主机容器）    Neo4j（宿主机容器）
+```
+
+**部署文件说明：**
+
+| 文件 | 作用 |
+|------|------|
+| `Dockerfile` | 多阶段构建，Python 3.12-slim 镜像，Uvicorn 双 worker |
+| `docker-compose.yml` | 编排 backend + nginx，自动重启 |
+| `nginx/default.conf` | 反向代理、SSE 流式支持、静态资源缓存 |
+| `.env.example` | 环境变量参考模板（敏感值已脱敏） |
+| `.dockerignore` | 排除无关文件，减小镜像体积 |
+
+**部署步骤：**
+
+```bash
+# 1. 复制环境配置
+cp .env.example .env
+```
+
+编辑 `.env`，**必填项**：
+
+| 变量 | 说明 |
+|------|------|
+| `OPENAI_API_KEY` | LLM API Key（或阿里云通义千问等兼容 API） |
+| `API_BASE_URL` | API 地址（如 `https://dashscope.aliyuncs.com/compatible-mode/v1`） |
+| `MODEL_NAME` | 模型名称 |
+| `JWT_SECRET_KEY` | JWT 签名密钥（生产环境建议 32 位以上随机字符串） |
+| `MONGODB_URL` | 改为 `mongodb://admin:密码@host.docker.internal:27017` |
+| `NEO4J_URI` | 改为 `bolt://host.docker.internal:7687` |
+| `CORS_ORIGINS` | 改为具体域名，如 `["https://yourdomain.com"]`（禁止 `*`） |
+
+```bash
+# 2. 确保 MongoDB 和 Neo4j 容器已在运行
+
+# 3. 构建并启动（后台运行）
+docker compose up --build -d
+
+# 4. 查看服务状态
+docker compose ps
+
+# 5. 查看实时日志
+docker compose logs -f
+```
+
+**常用运维命令：**
+
+```bash
+# 重启服务（不重建镜像）
+docker compose restart
+
+# 更新代码后重新部署
+docker compose up --build -d
+
+# 停止服务
+docker compose down
+
+# 仅查看 backend 日志
+docker compose logs -f backend
+```
+
+**访问地址：**
+
+| 地址 | 说明 |
+|------|------|
+| http://localhost | 主界面 |
+| http://localhost/login | 登录页 |
+| http://localhost/docs | API 文档（Swagger UI） |
+| http://localhost/health | 健康检查 |
 
 ---
 
