@@ -20,24 +20,6 @@ class StreamConfig(BaseModel):
     client_timeout: int = Field(default=300, description="客户端超时(秒)")
 
 
-class ConversationContextConfig(BaseModel):
-    """对话上下文管理配置"""
-    # 基础限制
-    max_messages: int = Field(default=50, description="最大消息数量")
-    max_tokens: int = Field(default=8000, description="最大 token 数量")
-    
-    # 摘要压缩配置
-    enable_compression: bool = Field(default=False, description="启用上下文压缩")
-    keep_recent_messages: int = Field(default=20, description="保留最近的消息数量")
-    
-    # AI 摘要配置
-    enable_ai_summary: bool = Field(default=True, description="启用 AI 智能摘要")
-    summary_max_length: int = Field(default=200, description="摘要最大长度(字符)")
-    
-    # Token 估算配置
-    chinese_token_ratio: float = Field(default=1.5, description="中文字符 token 比例")
-    english_token_ratio: float = Field(default=0.75, description="英文字符 token 比例")
-
 class Settings(BaseSettings):
     """应用配置"""
 

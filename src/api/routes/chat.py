@@ -207,8 +207,11 @@ async def chat_stream(request: ChatRequest, req: Request):
             }
 
             async for chunk in agent.stream(**stream_kwargs):
-                # 检查客户端是否断开
-                if await req.is_disconnected():
+                # 检查客户端是否断开（兼容不同 Starlette 版本）
+                is_disc = req.is_disconnected()
+                if hasattr(is_disc, '__await__'):
+                    is_disc = await is_disc
+                if is_disc:
                     logger.info("客户端断开连接")
                     break
 
