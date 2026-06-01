@@ -13,7 +13,7 @@ from src.api.middleware.auth import get_current_user
 from fastapi.responses import StreamingResponse
 import logging
 
-from src.core.logging_decorator import log_method_call
+from src.core.logging.decorator import log_method_call
 
 logger = logging.getLogger(__name__)
 

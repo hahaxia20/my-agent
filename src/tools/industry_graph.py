@@ -20,6 +20,7 @@ class SmartGraphQueryTool(BaseTool):
             "查询某个行业代码属于哪些产业链、跨产业链分析、"
             "查找特定环节的上游/下游关系、统计查询等。"
             "当问题较为灵活、不确定具体产业链名称时使用此工具。"
+            "重要：直接将用户原话作为 question 参数传入，禁止改写、补充或重新表述用户问题。"
         )
         self.neo4j = get_neo4j()
         self.parameters = {
@@ -27,7 +28,11 @@ class SmartGraphQueryTool(BaseTool):
             "properties": {
                 "question": {
                     "type": "string",
-                    "description": "自然语言查询问题，如：'用到稀土的产业链有哪些'、'氢能源的上游环节'、'各产业链环节数量统计'",
+                    "description": (
+                        "自然语言查询问题。严格传入用户原话，不要添加'环节''结构''上中游'等额外词语。"
+                        "例如：用户说'核能的产业链有哪些'就传入'核能的产业链有哪些'，"
+                        "不要改写为'核能产业链的上中游结构'。"
+                    ),
                 }
             },
             "required": ["question"],

@@ -6,6 +6,9 @@ __pycache__/
 *.pyc
 .venv/
 
+# 数据文件
+*.xlsx
+
 # IDE
 .vscode/
 .idea/

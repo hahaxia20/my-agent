@@ -49,18 +49,10 @@
                 <div class="header-left">
                     <h2 id="chatTitle">新对话</h2>
 
-                    <!-- 模式切换器 -->
-                    <div class="mode-switcher">
-                        <button class="mode-btn active" onclick="switchMode('normal')" id="modeNormal">
-                            <span class="mode-icon">💬</span>普通对话
-                        </button>
-                        <button class="mode-btn" onclick="switchMode('complex')" id="modeComplex">
-                            <span class="mode-icon">🚀</span>复杂任务
-                        </button>
-                        <button class="mode-btn" onclick="toggleSubtaskPanel()" id="modeSubtask" style="display:none;">
-                            <span class="mode-icon">📋</span>子任务
-                        </button>
-                    </div>
+                    <!-- 子任务按钮（复杂任务完成后自动显示） -->
+                    <button class="mode-btn" onclick="toggleSubtaskPanel()" id="modeSubtask" style="display:none;">
+                        <span class="mode-icon">📋</span>子任务
+                    </button>
                 </div>
             </div>
 
@@ -68,14 +60,7 @@
                 <div class="empty-state">
                     <div class="empty-state-icon">🦌</div>
                     <h3 id="welcomeTitle">你好！我是你的 AI 助手</h3>
-                    <p id="welcomeDesc">我可以帮你分析网页、处理数据、搜索信息，完成各种复杂任务</p>
-                    
-                    <!-- 模式切换提示（仅在普通模式显示） -->
-                    <div class="mode-hint" id="modeHint">
-                        <span class="mode-hint-icon">💡</span>
-                        <span class="mode-hint-text">如果有复杂任务（多维度分析、对比研究等），可以切换到</span>
-                        <button class="mode-hint-btn" onclick="switchMode('complex')">🚀 复杂模式</button>
-                    </div>
+                    <p id="welcomeDesc">我可以帮你搜索信息、分析产业链、处理数据，复杂任务会自动启用智能分析</p>
                 </div>
             </div>
 

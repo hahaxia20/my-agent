@@ -110,7 +110,12 @@ class TaskDecomposer:
         strategy: str,
         context: Optional[Dict[str, Any]] = None
     ) -> str:
-        """构建任务分解提示词"""
+        """构建任务分解提示词
+        
+        context 用于传递对话历史背景，与 task 明确区分：
+        - context: 仅供理解用户意图的背景信息，不需要执行
+        - task:    当前需要分解执行的实际任务
+        """
         
         strategy_descriptions = {
             "parallel": "将任务分解为可以并行执行的独立子任务",
@@ -118,10 +123,22 @@ class TaskDecomposer:
             "hybrid": "将任务分解为部分并行、部分串行的混合子任务"
         }
         
+        # 如果有对话历史背景，单独注入并明确标注“不需要执行”
+        context_block = ""
+        if context:
+            context_block = f"""
+## 对话历史背景（仅供理解用户意图，不需要执行）
+
+{context}
+
+---
+"""
+        
         prompt = f"""
+{context_block}
 请将以下任务分解为多个可执行的子任务：
 
-**原始任务**:
+**当前任务**:
 {task}
 
 **分解策略**: {strategy}
@@ -132,6 +149,7 @@ class TaskDecomposer:
 2. 每个子任务应该有明确的目标和输出
 3. 子任务之间应该尽量独立 (如果是并行策略)
 4. 为每个子任务指定需要的工具 (如果有特殊需求)
+5. 只分解“当前任务”，不要将“对话历史背景”中的内容作为子任务
 
 **输出格式** (JSON):
 ```json
@@ -152,9 +170,6 @@ class TaskDecomposer:
 
 请只输出 JSON，不要其他内容。
 """
-        
-        if context:
-            prompt += f"\n**额外上下文**:\n{context}\n"
         
         return prompt
     

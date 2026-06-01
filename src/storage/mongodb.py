@@ -8,7 +8,7 @@ import uuid
 
 from datetime import datetime, timezone, timedelta
 
-from src.core.logging_decorator import log_method_call
+from src.core.logging.decorator import log_method_call
 
 # 中国时区
 CST = timezone(timedelta(hours=8))

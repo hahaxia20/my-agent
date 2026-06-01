@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: Unit Tests (Python 3.11)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run unit tests
+        run: pytest tests/test_unit.py -v --tb=short
+
+      - name: Verify all imports
+        run: |
+          python -c "from src.core.agent import MyAgent; print('✅ agent OK')"
+          python -c "from src.core.stream_handler import StreamHandler; print('✅ stream_handler OK')"
+          python -c "from src.core.sub_agent.orchestrator import SubAgentOrchestrator; print('✅ orchestrator OK')"
+          python -c "from src.skills.manager import skill_registry; print('✅ skills OK')"

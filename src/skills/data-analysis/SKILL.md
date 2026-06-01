@@ -3,6 +3,9 @@ name: data-analysis
 description: 分析数据集，生成统计报告，发现数据趋势和洞察。当用户要求分析数据、生成报告、统计数据或发现数据模式时使用此技能。
 license: MIT
 compatibility: 需要 Python 3.10+ 和 LLM 支持
+allowed_tools:
+  - calculator
+  - get_current_time
 metadata:
   author: My Agent Team
   version: "1.0.0"

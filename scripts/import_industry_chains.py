@@ -93,7 +93,7 @@ def main():
     )
 
     # Excel 文件路径
-    excel_file = "产业链（结构）标签-0429.xlsx"
+    excel_file = "data/产业链（结构）标签-0429.xlsx"
 
     if not Path(excel_file).exists():
         logger.error(f"❌ Excel 文件不存在: {excel_file}")

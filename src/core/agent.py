@@ -16,7 +16,9 @@
 
 # 标准库
 import asyncio
+import json
 import logging
+import re
 import time
 from datetime import datetime
 from typing import List, Dict, Any, Optional, AsyncIterator, cast
@@ -34,10 +36,14 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 # 项目模块
 from src.config import get_settings_safe
 from src.core.context import SystemPromptContextManager, ConversationContextManager
-from src.core.logging_decorator import log_method_call
-from src.core.stream_manager import (
-    StreamBuffer, StreamFormatter, StreamMetrics,
-    StreamChunk, StreamEventType, StreamCypherFilter
+from src.core.logging.decorator import log_method_call
+from src.core.stream.manager import StreamFormatter
+from src.core.helpers.intent_classifier import classify_intent
+from src.core.helpers.chat_helpers import (
+    check_input_security,
+    format_subtask_results,
+    handle_timeout,
+    handle_chat_error,
 )
 from src.core.security import InputSecurityFilter
 from src.core.tool_adapter import (
@@ -49,6 +55,7 @@ from src.tools.manager import tool_manager
 from src.skills.manager import skill_registry
 from src.core.sub_agent import SubAgentOrchestrator
 from src.core.sub_agent.models import SubAgentConfig
+from src.core.stream.handler import StreamHandler
 
 # 日志初始化 (注意: 只在主入口调用 setup_logging)
 logger = logging.getLogger(__name__)
@@ -136,6 +143,9 @@ class MyAgent:
         
         # 初始化 Sub-Agent 编排器
         self.sub_agent_orchestrator = self._init_sub_agent_orchestrator()
+        
+        # 流式处理器（委托模式，避免 agent.py 体量过大）
+        self._stream_handler = StreamHandler(self)
         
         # 创建 ReAct Agent
         self.agent = self._create_agent()
@@ -300,25 +310,8 @@ class MyAgent:
     # ───────────────────────────────────────────────────────
 
     def _check_input_security(self, user_query: str, session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """
-        检查输入安全性
-        
-        Returns:
-            None 表示安全通过；返回 dict 表示拦截响应
-        """
-        security_result = InputSecurityFilter.check_input(user_query)
-        if not security_result.is_safe:
-            logger.warning(f"🚨 [安全拦截] {security_result.reason}")
-            return {
-                "reply": "抱歉，您的请求包含了不安全的内容，我无法处理。",
-                "session_id": session_id,
-                "success": False,
-                "error": "security_violation",
-                "security_reason": security_result.reason
-            }
-        elif security_result.risk_level == "medium":
-            logger.info(f"⚠️ [安全警告] {security_result.reason}")
-        return None
+        """检查输入安全性（委托到 chat_helpers 模块）"""
+        return check_input_security(user_query, session_id)
 
     async def _ensure_session(self, session_id: Optional[str], user_id: str, title: str) -> str:
         """确保会话存在，不存在则创建"""
@@ -329,33 +322,51 @@ class MyAgent:
 
     @staticmethod
     def _format_subtask_results(sub_agent_results) -> List[Dict[str, Any]]:
-        """格式化子任务结果列表（用于 DB 元数据和 API 响应）"""
-        return [
-            {
-                "task_id": r.task_id,
-                "task_name": r.task_id,
-                "status": r.status.value,
-                "duration": r.duration,
-                "result_length": len(r.result) if r.result else 0,
-                "result_preview": r.result[:200] if r.result else None
-            }
-            for r in sub_agent_results
-        ]
+        """格式化子任务结果列表（委托到 chat_helpers 模块）"""
+        return format_subtask_results(sub_agent_results)
 
-    @staticmethod
-    def _format_stream_error(error: Exception) -> str:
-        """根据错误类型返回友好的流式错误提示"""
-        error_msg = str(error)
-        if "403" in error_msg or "PermissionDenied" in error_msg:
-            if "free tier" in error_msg.lower() or "quota" in error_msg.lower():
-                return "\n❌ API 额度已用完，请检查你的 API Key 配置或联系管理员。"
-            return "\n❌ API 访问被拒绝，请检查 API Key 是否正确。"
-        elif "401" in error_msg or "Authentication" in error_msg:
-            return "\n❌ API Key 无效，请检查配置。"
-        elif "429" in error_msg or "rate limit" in error_msg.lower():
-            return "\n⏳ 请求过于频繁，请稍后重试。"
-        else:
-            return f"\n抱歉，出现错误：{error_msg[:200]}"
+    def _classify_intent(self, query: str) -> str:
+        """意图分类（委托到 intent_classifier 模块）"""
+        return classify_intent(query)
+
+    async def _build_history_context(self, session_id: str) -> Optional[str]:
+        """
+        构建对话历史背景摘要
+        
+        仅返回纯历史摘要字符串，供 Decomposer 理解用户意图。
+        不包含当前任务，当前任务由 complex_chat 单独传入。
+        
+        Returns:
+            历史摘要字符串；无历史时返回 None
+        """
+        if not session_id:
+            return None
+        
+        try:
+            messages = await self.db.get_messages(session_id)
+            if not messages:
+                return None
+            
+            # 取最近的消息（偶数条，保证问答配对）
+            max_history = 6
+            recent = messages[-max_history:] if len(messages) > max_history else messages
+            
+            context_lines = []
+            for msg in recent:
+                role = "用户" if msg.get("role") == "user" else "助手"
+                content = msg.get("content", "")[:150]
+                context_lines.append(f"- {role}: {content}")
+            
+            history_summary = "\n".join(context_lines)
+            
+            logger.info(
+                f"📚 [历史上下文] 已加载 {len(recent)} 条历史消息作为背景"
+            )
+            return history_summary
+            
+        except Exception as e:
+            logger.warning(f"⚠️ 加载历史上下文失败: {e}")
+            return None
 
     # ───────────────────────────────────────────────────────
     # 4.4 核心方法: 对话处理
@@ -470,32 +481,12 @@ class MyAgent:
         }
 
     def _handle_timeout(self, session_id: str, request_start: float) -> Dict[str, Any]:
-        """处理超时错误"""
-        elapsed = time.time() - request_start
-        logger.error(f"⏰ [对话超时] session={session_id} - 耗时: {elapsed:.2f}s")
-        return {
-            "reply": "抱歉，请求超时，请稍后重试。",
-            "session_id": session_id,
-            "success": False,
-            "error": "timeout",
-            "elapsed_time": elapsed
-        }
+        """处理超时错误（委托到 chat_helpers 模块）"""
+        return handle_timeout(session_id, request_start)
 
     def _handle_chat_error(self, session_id: str, error: Exception, request_start: float) -> Dict[str, Any]:
-        """处理对话错误"""
-        elapsed = time.time() - request_start
-        logger.error(
-            f"💥 [对话错误] session={session_id} - "
-            f"耗时: {elapsed:.2f}s - 错误: {str(error)}",
-            exc_info=True
-        )
-        return {
-            "reply": f"抱歉，处理请求时出现错误：{str(error)}",
-            "session_id": session_id,
-            "success": False,
-            "error": str(error),
-            "elapsed_time": elapsed
-        }
+        """处理对话错误（委托到 chat_helpers 模块）"""
+        return handle_chat_error(session_id, error, request_start)
 
     def _build_runnable_config(
             self,
@@ -570,13 +561,18 @@ class MyAgent:
         session_id = await self._ensure_session(session_id, user_id, f"[复杂] {user_query[:20]}")
         
         try:
+            # 主 Agent 负责上下文管理：加载历史作为背景（不含当前任务）
+            history_context = await self._build_history_context(session_id)
+            
             # 使用 Sub-Agent 编排器执行
+            # task = 纯任务（当前问题）；context = 纯背景（历史）
             result = await self.sub_agent_orchestrator.execute(
                 task=user_query,
                 session_id=session_id,
                 user_id=user_id,
                 decomposition_strategy=decomposition_strategy,
-                progress_callback=progress_callback  # 传递进度回调
+                progress_callback=progress_callback,
+                context=history_context
             )
             
             elapsed = time.time() - request_start
@@ -596,22 +592,29 @@ class MyAgent:
                 "decomposition_strategy": result.decomposition.decomposition_strategy if result.decomposition else None
             }
             
+            # 若编排器返回失败且没有合成结果，提供有意义的错误信息
+            reply = result.synthesized_result
+            if not result.success and not reply:
+                error_detail = result.error if result.error else "所有子任务执行失败"
+                reply = f"复杂任务执行失败：{error_detail}"
+
+            # 保存 AI 回复（用处理后的 reply，避免存入空值）
             await self.db.add_message(
-                session_id, 
-                "assistant", 
-                result.synthesized_result,
+                session_id,
+                "assistant",
+                reply,
                 metadata=subtask_metadata
             )
-            
+
             logger.info(
                 f"✅ [复杂任务] 完成 - "
                 f"耗时: {elapsed:.2f}s, "
                 f"子任务数: {len(result.sub_agent_results)}, "
                 f"成功: {sum(1 for r in result.sub_agent_results if r.status.value == 'completed')}"
             )
-            
+
             return {
-                "reply": result.synthesized_result,
+                "reply": reply,
                 "session_id": session_id,
                 "success": result.success,
                 "elapsed_time": elapsed,
@@ -635,9 +638,8 @@ class MyAgent:
                 "elapsed_time": elapsed
             }
 
-    # ========== 流式对话 ==========
+    # ========== 流式对话（委托给 StreamHandler） ==========
 
-    @log_method_call(prefix="[Agent-流式] ", log_duration=True)
     async def stream(
             self,
             user_query: str,
@@ -647,203 +649,16 @@ class MyAgent:
             buffer_size: int = 5,
             flush_interval: float = 0.05
     ) -> AsyncIterator[str]:
-        """生产级流式对话 - 增强工具/技能调用日志"""
-
-        logger.info(f"🌊 [流式对话开始] session_id={session_id}, user_id={user_id}")
-        logger.debug(f"   用户查询: {_safe_truncate(user_query, 500)}")
-
-        # 🔒 安全检查
-        security_block = self._check_input_security(user_query, session_id)
-        if security_block:
-            yield security_block["reply"]
-            return
-
-        request_start = time.time()
-        metrics = StreamMetrics() if enable_metrics else None
-        if metrics:
-            metrics.start()
-
-        session_id = await self._ensure_session(session_id, user_id, user_query[:30])
-
-        buffer = StreamBuffer(max_size=buffer_size, flush_interval=flush_interval)
-
-        config = RunnableConfig(
-            configurable={"thread_id": session_id},
-            metadata={"user_id": user_id},
-            tags=["production", "stream"],
-            recursion_limit=self.config.recursion_limit
-        )
-
-        full_response = ""
-        total_tokens = {"prompt": 0, "completion": 0, "total": 0}
-        current_tool = None
-        tool_start_time = None
-        cypher_filter = StreamCypherFilter()
-
-        try:
-            async with self._semaphore:
-                request_start = time.time()
-                logger.info(f"🚀 开始流式处理: {session_id}")
-
-                used_tools = []
-                used_skills = []
-                llm_start = time.time()
-                llm_first_token_logged = False
-                logger.info(f"️ [性能] 开始调用 LLM...")
-                
-                input_messages = await self.conversation_context.load_context(
-                    session_id=session_id,
-                    current_message=user_query
-                )
-                stats = self.conversation_context.get_context_stats(input_messages)
-                logger.info(f"📊 流式对话上下文统计: {stats}")
-                
-                async for event in self.agent.astream_events(
-                    {"messages": input_messages},
-                    config=config,
-                    version="v2"
-                ):
-                    event_type = event["event"]
-
-                    # ── LLM 流式输出 ──
-                    if event_type == "on_chat_model_stream":
-                        if not llm_first_token_logged:
-                            llm_first_token_logged = True
-                            logger.info(f"⏱️ [性能] LLM 首字耗时: {time.time() - llm_start:.2f}s")
-                        
-                        chunk = event["data"]["chunk"]
-                        usage_metadata = getattr(chunk, 'usage_metadata', None)
-                        if usage_metadata:
-                            total_tokens["prompt"] = usage_metadata.get("input_tokens", 0)
-                            total_tokens["completion"] = usage_metadata.get("output_tokens", 0)
-                            total_tokens["total"] = usage_metadata.get("total_tokens", 0)
-                        
-                        is_empty = not chunk.content or not chunk.content.strip()
-                        if metrics:
-                            metrics.record_chunk(chunk.content or "", is_empty)
-
-                        if chunk.content and chunk.content.strip():
-                            filtered = cypher_filter.process(chunk.content)
-                            if not filtered or not filtered.strip():
-                                continue
-                            buffered = buffer.add(StreamChunk(type=StreamEventType.TEXT, content=filtered))
-                            if buffered:
-                                full_response += buffered
-                                yield buffered
-
-                    # ── 工具调用开始 ──
-                    elif event_type == "on_tool_start":
-                        tool_name = event.get('name', 'unknown')
-                        tool_start_time = time.time()
-                        current_tool = tool_name
-
-                        if tool_name == "load_skill":
-                            tool_input = event.get('data', {}).get('input', {})
-                            skill_name = tool_input.get('skill_name', '') if isinstance(tool_input, dict) else ''
-                            if skill_name and skill_name not in used_skills:
-                                used_skills.append(skill_name)
-                                logger.info(f"🎯 [使用技能] {skill_name}")
-                        elif tool_name not in used_tools:
-                            used_tools.append(tool_name)
-                            logger.info(f"🔧 [使用工具] {tool_name}")
-
-                        if metrics:
-                            metrics.record_tool_call(tool_name)
-
-                        logger.info(f"🔧 [工具调用开始] {tool_name}")
-                        logger.debug(f"   工具参数: {event.get('data', {}).get('input', {})}")
-
-                        buffered = buffer.flush()
-                        if buffered:
-                            full_response += buffered
-                            yield buffered
-                        yield f"\n🔧 正在调用工具: **{tool_name}**...\n"
-
-                    # ── 工具调用结束 ──
-                    elif event_type == "on_tool_end":
-                        elapsed = time.time() - (tool_start_time or time.time())
-                        if current_tool:
-                            logger.info(f"✅ [工具调用完成] {current_tool} - 耗时: {elapsed:.2f}s")
-                            logger.debug(f"   工具返回: {_safe_truncate(str(event.get('data', {}).get('output', '')), 300)}")
-                            self._record_tool_call(current_tool, elapsed, success=True)
-                            yield f"\n✅ 工具 **{current_tool}** 调用完成 ({elapsed:.1f}s)\n"
-                            current_tool = None
-                            tool_start_time = None
-
-                    # ── 工具错误 ──
-                    elif event_type == "on_tool_error":
-                        error = event.get('data', {}).get('error', '未知错误')
-                        tool_name = event.get('name', 'unknown')
-                        elapsed = time.time() - (tool_start_time or time.time())
-                        logger.error(f"❌ [工具调用失败] {tool_name} - 耗时: {elapsed:.2f}s - 错误: {str(error)}")
-                        self._record_tool_call(tool_name, elapsed, success=False)
-                        yield f"\n❌ 工具 **{tool_name}** 调用失败\n"
-                        current_tool = None
-
-                # 刷新 Cypher 过滤器剩余内容
-                cypher_remaining = cypher_filter.flush()
-                if cypher_remaining and cypher_remaining.strip():
-                    buffered = buffer.add(StreamChunk(type=StreamEventType.TEXT, content=cypher_remaining))
-                    if buffered:
-                        full_response += buffered
-                        yield buffered
-
-                # 刷新剩余缓冲区
-                remaining = buffer.flush()
-                if remaining:
-                    full_response += remaining
-                    yield remaining
-
-                total_elapsed = time.time() - request_start
-                logger.info(
-                    f"✅ [流式对话完成] session={session_id} - "
-                    f"总耗时: {total_elapsed:.2f}s - 回复长度: {len(full_response)} 字符"
-                )
-
-                if used_tools or used_skills:
-                    logger.info(f"📊 [本次调用] 工具: {used_tools or '无'}, 技能: {used_skills or '无'}")
-
-                if metrics and self.config.debug:
-                    metrics.finish()
-                    stats = metrics.get_stats()
-                    logger.info(f"📊 [流式统计] 会话:{session_id} - {stats}")
-                    if stats.get('tools_called'):
-                        yield f"\n\n📊 调用的工具: {', '.join(stats['tools_called'])}"
-                    if stats.get('skills_called'):
-                        yield f"\n🎯 调用的技能: {', '.join(stats['skills_called'])}"
-
-                if not full_response:
-                    error_msg = "抱歉，我没有收到有效响应。请稍后重试。"
-                    full_response = error_msg
-                    yield error_msg
-
-            await self.db.add_message(session_id, "user", user_query)
-            await self.db.add_message(session_id, "assistant", full_response)
-
-            tools_called = metrics.get_tool_names() if metrics else []
-            skills_called = metrics.get_skill_names() if metrics else []
-            metadata = StreamFormatter.format_metadata(
-                session_id=session_id,
-                chunk_count=metrics.chunk_count if metrics else 0,
-                duration=metrics.duration if metrics else 0,
-                tools_called=tools_called,
-                skills_called=skills_called
-            )
-            yield f"\n<!-- {metadata} -->"
-
-        except asyncio.CancelledError:
-            logger.info(f"🛑 [流式取消] 会话被取消: {session_id}")
-            yield "\n<!-- cancelled -->"
-
-        except asyncio.TimeoutError:
-            logger.error(f"⏰ [流式超时] {session_id}")
-            yield "\n抱歉，响应超时，请稍后重试。"
-
-        except Exception as e:
-            logger.error(f"💥 [流式错误] {e}", exc_info=True)
-            if metrics:
-                metrics.record_error()
-            yield self._format_stream_error(e)
+        """流式对话（委托给 StreamHandler）"""
+        async for chunk in self._stream_handler.stream(
+            user_query=user_query,
+            session_id=session_id,
+            user_id=user_id,
+            enable_metrics=enable_metrics,
+            buffer_size=buffer_size,
+            flush_interval=flush_interval
+        ):
+            yield chunk
 
     # ========== 会话管理 ==========
 

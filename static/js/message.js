@@ -2,7 +2,7 @@
    My Agent - 消息发送与接收
    ======================================== */
 
-// 发送消息（流式）
+// 发送消息（统一入口，自动路由）
 async function sendMessage() {
     const input = document.getElementById('messageInput');
     const sendBtn = document.getElementById('sendBtn');
@@ -20,7 +20,7 @@ async function sendMessage() {
     // 创建 AI 消息占位
     const assistantDiv = addMessage('assistant', '', false);
     const contentDiv = assistantDiv.querySelector('.message-content');
-    contentDiv.innerHTML = '<span style="color: #999;">正在思考中</span><span class="cursor">...</span>';  // 友好提示
+    contentDiv.innerHTML = '<span style="color: #999;">正在思考中</span><span class="cursor">...</span>';
 
     // 禁用按钮
     sendBtn.disabled = true;
@@ -28,15 +28,7 @@ async function sendMessage() {
 
     try {
         const token = localStorage.getItem('authToken');
-        
-        // 根据模式选择不同的 API
-        if (currentMode === 'complex') {
-            // 复杂任务模式 - 非流式
-            await sendComplexTask(message, contentDiv, sendBtn, token);
-        } else {
-            // 普通对话模式 - 流式
-            await sendNormalMessage(message, contentDiv, sendBtn, token);
-        }
+        await handleUnifiedStream(message, contentDiv, token);
     } catch (error) {
         console.error('Error:', error);
         contentDiv.textContent = `❌ 出错了：${error.message}`;
@@ -47,8 +39,8 @@ async function sendMessage() {
     }
 }
 
-// 发送普通消息（流式）
-async function sendNormalMessage(message, contentDiv, sendBtn, token) {
+// 统一流式响应处理（自动识别简单/复杂）
+async function handleUnifiedStream(message, contentDiv, token) {
     const response = await fetch(`${API_BASE_URL}/api/v1/chat/stream`, {
         method: 'POST',
         headers: {
@@ -70,6 +62,9 @@ async function sendNormalMessage(message, contentDiv, sendBtn, token) {
     const decoder = new TextDecoder();
     let fullText = '';
     let sessionId = null;
+    let isComplex = false;
+    let subTasks = [];
+    let complexEvents = [];
 
     while (true) {
         const { done, value } = await reader.read();
@@ -79,202 +74,182 @@ async function sendNormalMessage(message, contentDiv, sendBtn, token) {
         const lines = chunk.split('\n');
 
         for (const line of lines) {
-            if (line.startsWith('data: ')) {
-                const data = line.slice(6);
+            if (!line.startsWith('data: ')) continue;
+            const data = line.slice(6);
 
-                if (data.startsWith('__SESSION_ID__:')) {
-                    sessionId = data.replace('__SESSION_ID__:', '');
-                    if (!currentSessionId) {
-                        currentSessionId = sessionId;
-                        await loadSessions();
-                        showChatTitleForCurrentSession();
-                    }
-                } else {
-                    fullText += data;
-                    if (typeof marked !== 'undefined') {
-                        const rendered = marked.parse(fullText);
-                        contentDiv.innerHTML = rendered + '<span class="cursor">▌</span>';
-                    } else {
-                        contentDiv.textContent = fullText + '▌';
-                    }
-                    scrollToBottom();
+            if (data === '[DONE]') continue;
+
+            // 处理会话 ID
+            if (data.startsWith('__SESSION_ID__:')) {
+                sessionId = data.replace('__SESSION_ID__:', '');
+                if (!currentSessionId) {
+                    currentSessionId = sessionId;
+                    await loadSessions();
+                    showChatTitleForCurrentSession();
                 }
+                continue;
+            }
+
+            // 尝试解析 JSON 事件
+            let jsonData = null;
+            try {
+                jsonData = JSON.parse(data);
+            } catch (e) {
+                // 非 JSON，当作文本内容
+            }
+
+            if (jsonData && jsonData.type) {
+                // 路由事件：后端告知这是复杂任务
+                if (jsonData.type === 'routing' && jsonData.data?.mode === 'complex') {
+                    isComplex = true;
+                    contentDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">🚀 正在启动智能分析系统...</div>';
+                    continue;
+                }
+
+                // 复杂任务事件处理
+                if (isComplex) {
+                    complexEvents.push(jsonData);
+                    handleComplexEvent(jsonData, contentDiv, subTasks);
+                    continue;
+                }
+            }
+
+            // 普通文本内容（简单查询）
+            if (!isComplex) {
+                fullText += data;
+                if (typeof marked !== 'undefined') {
+                    contentDiv.innerHTML = marked.parse(fullText) + '<span class="cursor">▌</span>';
+                } else {
+                    contentDiv.textContent = fullText + '▌';
+                }
+                scrollToBottom();
             }
         }
     }
 
-    if (typeof marked !== 'undefined') {
-        contentDiv.innerHTML = marked.parse(fullText);
+    // 流结束后最终渲染
+    if (isComplex) {
+        // 复杂任务已在事件处理中渲染
     } else {
-        contentDiv.textContent = fullText;
+        if (typeof marked !== 'undefined') {
+            contentDiv.innerHTML = marked.parse(fullText);
+        } else {
+            contentDiv.textContent = fullText;
+        }
     }
 }
 
-// 发送复杂任务（流式）
-async function sendComplexTask(message, contentDiv, sendBtn, token) {
-    contentDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">🚀 正在启动 Sub-Agent 编排系统...</div>';
-    
-    const response = await fetch(`${API_BASE_URL}/api/v1/complex-chat/stream`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-            task: message,
-            session_id: currentSessionId,
-            decomposition_strategy: 'auto'
-        })
-    });
+// 处理复杂任务事件
+function handleComplexEvent(event, contentDiv, subTasks) {
+    switch (event.type) {
+        case 'decompose_start':
+            contentDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">🔪 正在分解任务...</div>';
+            break;
 
-    if (response.status === 401) {
-        window.location.href = 'login.html';
-        return;
-    }
+        case 'decompose_complete':
+            const taskCount = event.data.sub_tasks_count;
+            contentDiv.innerHTML = `<div style="padding: 20px;">
+                <div style="margin-bottom: 12px; padding: 12px; background: #e3f2fd; border-radius: 8px;">
+                    <strong>📋 任务分解完成</strong><br>
+                    <span style="font-size: 13px; color: #666;">将分解为 ${taskCount} 个子任务并行执行</span>
+                </div>
+                <div id="subtaskProgress"></div>
+            </div>`;
+            break;
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let subTasks = [];
-    let finalResult = null;
+        case 'subtask_start':
+            subTasks.push({
+                id: event.data.task_id,
+                name: event.data.task_name || event.data.task_id,
+                status: 'running',
+                duration: 0,
+                result_length: 0
+            });
+            renderSubtaskProgress(contentDiv, subTasks);
+            break;
 
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
-
-        for (const line of lines) {
-            if (line.startsWith('data: ')) {
-                const data = line.slice(6);
-                
-                if (data === '[DONE]') continue;
-                
-                try {
-                    const event = JSON.parse(data);
-                    
-                    // 根据不同事件类型更新 UI
-                    switch (event.type) {
-                        case 'decompose_start':
-                            contentDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">🔪 正在分解任务...</div>';
-                            break;
-                            
-                        case 'decompose_complete':
-                            const taskCount = event.data.sub_tasks_count;
-                            contentDiv.innerHTML = `<div style="padding: 20px;">
-                                <div style="margin-bottom: 12px; padding: 12px; background: #e3f2fd; border-radius: 8px;">
-                                    <strong>📋 任务分解完成</strong><br>
-                                    <span style="font-size: 13px; color: #666;">将分解为 ${taskCount} 个子任务并行执行</span>
-                                </div>
-                                <div id="subtaskProgress"></div>
-                            </div>`;
-                            break;
-                            
-                        case 'execution_start':
-                            // 开始执行子任务
-                            break;
-                            
-                        case 'subtask_start':
-                            // 添加子任务到列表
-                            subTasks.push({
-                                id: event.data.task_id,
-                                name: event.data.task_name,
-                                status: 'running',
-                                duration: 0,
-                                result_length: 0
-                            });
-                            renderSubtaskProgress(contentDiv, subTasks);
-                            break;
-                            
-                        case 'subtask_complete':
-                            // 更新子任务状态
-                            const task = subTasks.find(t => t.id === event.data.task_id);
-                            if (task) {
-                                task.status = 'success';
-                                task.duration = event.data.duration;
-                                task.result_length = event.data.result_length;
-                            }
-                            renderSubtaskProgress(contentDiv, subTasks);
-                            break;
-                            
-                        case 'subtask_failed':
-                            // 更新子任务为失败
-                            const failedTask = subTasks.find(t => t.id === event.data.task_id);
-                            if (failedTask) {
-                                failedTask.status = 'failed';
-                                failedTask.error = event.data.error;
-                            }
-                            renderSubtaskProgress(contentDiv, subTasks);
-                            break;
-                            
-                        case 'execution_complete':
-                            contentDiv.innerHTML += `<div style="margin-top: 12px; padding: 12px; background: #fff3e0; border-radius: 8px;">
-                                <strong>✅ 所有子任务执行完成</strong><br>
-                                <span style="font-size: 13px; color: #666;">成功: ${event.data.success_count}/${event.data.total_count}</span>
-                            </div>`;
-                            break;
-                            
-                        case 'synthesis_start':
-                            contentDiv.innerHTML += '<div style="margin-top: 12px; padding: 12px; background: #f3e5f5; border-radius: 8px; color: #666;">🔗 正在合成最终结果...</div>';
-                            break;
-                            
-                        case 'synthesis_complete':
-                            contentDiv.innerHTML += `<div style="margin-top: 12px; padding: 12px; background: #e8f5e9; border-radius: 8px; color: #666;">✅ 结果合成完成 (${event.data.result_length} 字符)</div>`;
-                            break;
-                            
-                        case 'final_result':
-                            finalResult = event.data;
-                            
-                            // 保存复杂任务结果
-                            lastComplexTaskResult = {
-                                sub_tasks: finalResult.sub_tasks,
-                                duration: finalResult.duration,
-                                parallel_efficiency: finalResult.parallel_efficiency
-                            };
-                            
-                            // 显示子任务按钮
-                            document.getElementById('modeSubtask').style.display = 'block';
-                            
-                            // 渲染最终结果
-                            let html = `<div style="padding: 10px 0;">`;
-                            html += `<div style="margin-bottom: 16px; padding: 12px; background: #f0f8ff; border-radius: 8px; border-left: 4px solid #667eea;">`;
-                            html += `<strong>🚀 Sub-Agent 编排结果</strong><br>`;
-                            html += `<span style="font-size: 13px; color: #666;">`;
-                            html += `⏱️ 总耗时: ${finalResult.duration.toFixed(1)}s | `;
-                            html += `📊 子任务: ${finalResult.sub_tasks.length} | `;
-                            html += `✅ 成功: ${finalResult.sub_tasks.filter(t => t.status === 'success').length} | `;
-                            html += `⚡ 并行效率: ${(finalResult.parallel_efficiency * 100).toFixed(1)}%`;
-                            html += `</span></div>`;
-                            
-                            // 渲染 Markdown 内容
-                            if (typeof marked !== 'undefined') {
-                                html += marked.parse(finalResult.reply);
-                            } else {
-                                html += `<pre>${finalResult.reply}</pre>`;
-                            }
-                            
-                            html += `</div>`;
-                            contentDiv.innerHTML = html;
-                            
-                            // 更新会话 ID
-                            if (finalResult.session_id && !currentSessionId) {
-                                currentSessionId = finalResult.session_id;
-                                await loadSessions();
-                                showChatTitleForCurrentSession();
-                            }
-                            
-                            scrollToBottom();
-                            break;
-                            
-                        case 'error':
-                            contentDiv.textContent = `❌ 任务失败：${event.data.error}`;
-                            break;
-                    }
-                } catch (e) {
-                    console.error('解析 SSE 数据失败:', e);
-                }
+        case 'subtask_complete':
+            const task = subTasks.find(t => t.id === event.data.task_id);
+            if (task) {
+                task.status = 'success';
+                task.duration = event.data.duration;
+                task.result_length = event.data.result_length;
             }
-        }
+            renderSubtaskProgress(contentDiv, subTasks);
+            break;
+
+        case 'subtask_failed':
+            const failedTask = subTasks.find(t => t.id === event.data.task_id);
+            if (failedTask) {
+                failedTask.status = 'failed';
+                failedTask.error = event.data.error;
+            }
+            renderSubtaskProgress(contentDiv, subTasks);
+            break;
+
+        case 'execution_complete':
+            break;
+
+        case 'synthesis_start':
+            const synthDiv = document.createElement('div');
+            synthDiv.id = 'synthesisStatus';
+            synthDiv.style.cssText = 'margin-top: 12px; padding: 12px; background: #f3e5f5; border-radius: 8px; color: #666;';
+            synthDiv.textContent = '🔗 正在合成最终结果...';
+            contentDiv.appendChild(synthDiv);
+            scrollToBottom();
+            break;
+
+        case 'final_result':
+            const result = event.data;
+
+            // 保存复杂任务结果
+            lastComplexTaskResult = {
+                sub_tasks: result.sub_tasks,
+                duration: result.duration,
+                parallel_efficiency: result.parallel_efficiency || 0
+            };
+
+            // 显示子任务按钮
+            const subtaskBtn = document.getElementById('modeSubtask');
+            if (subtaskBtn) subtaskBtn.style.display = 'block';
+
+            // 更新会话 ID
+            if (result.session_id && !currentSessionId) {
+                currentSessionId = result.session_id;
+                loadSessions().then(() => showChatTitleForCurrentSession());
+            }
+
+            // 失败且无内容时显示错误
+            if (!result.success && !result.reply) {
+                contentDiv.innerHTML = `<div style="color: #e53e3e; padding: 16px;">❌ 任务失败：所有子任务执行失败，请检查 API 配额后重试</div>`;
+                break;
+            }
+
+            // 渲染最终结果
+            let html = `<div style="padding: 10px 0;">`;
+            html += `<div style="margin-bottom: 16px; padding: 12px; background: #f0f8ff; border-radius: 8px; border-left: 4px solid #667eea;">`;
+            html += `<strong>🚀 智能分析结果</strong><br>`;
+            html += `<span style="font-size: 13px; color: #666;">`;
+            html += `⏱️ 总耗时: ${(result.duration || 0).toFixed(1)}s | `;
+            html += `📋 子任务: ${result.sub_tasks?.length || 0}`;
+            if (result.parallel_efficiency) {
+                html += ` | ⚡ 并行效率: ${(result.parallel_efficiency * 100).toFixed(1)}%`;
+            }
+            html += `</span></div>`;
+
+            if (typeof marked !== 'undefined') {
+                html += marked.parse(result.reply || '');
+            } else {
+                html += `<pre>${result.reply || ''}</pre>`;
+            }
+            html += `</div>`;
+            contentDiv.innerHTML = html;
+            scrollToBottom();
+            break;
+
+        case 'error':
+            contentDiv.innerHTML = `<div style="color: #e53e3e; padding: 16px;">❌ 任务失败：${event.data.error}</div>`;
+            break;
     }
 }
 

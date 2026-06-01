@@ -4,71 +4,7 @@
 
 let currentSessionId = null;
 let sessions = [];
-let currentMode = 'normal'; // 'normal' 或 'complex'
 let lastComplexTaskResult = null; // 保存最近的复杂任务结果
-
-// 切换模式
-function switchMode(mode) {
-    currentMode = mode;
-    
-    // 更新按钮状态
-    document.querySelectorAll('.mode-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    
-    if (mode === 'normal') {
-        document.getElementById('modeNormal').classList.add('active');
-        document.getElementById('modeSubtask').style.display = 'none';
-    } else if (mode === 'complex') {
-        document.getElementById('modeComplex').classList.add('active');
-        
-        // 检查当前会话是否有复杂任务消息
-        const hasComplexTask = checkCurrentSessionForComplexTasks();
-        
-        if (hasComplexTask || lastComplexTaskResult) {
-            document.getElementById('modeSubtask').style.display = 'block';
-        } else {
-            document.getElementById('modeSubtask').style.display = 'none';
-        }
-    }
-    
-    // 更新欢迎文本
-    updateWelcomeText(mode);
-    
-    console.log(`切换到 ${mode} 模式`);
-}
-
-// 更新欢迎文本
-function updateWelcomeText(mode) {
-    const welcomeTitle = document.getElementById('welcomeTitle');
-    const welcomeDesc = document.getElementById('welcomeDesc');
-    const modeHint = document.getElementById('modeHint');
-    
-    if (mode === 'normal') {
-        welcomeTitle.textContent = '你好！我是你的 AI 助手';
-        welcomeDesc.textContent = '我可以帮你分析网页、处理数据、搜索信息，完成各种复杂任务';
-        modeHint.style.display = 'flex';  // 显示模式切换提示
-    } else if (mode === 'complex') {
-        welcomeTitle.textContent = '🚀 复杂任务模式已启用';
-        welcomeDesc.textContent = '我会将复杂任务自动分解为多个子任务，并行执行，智能整合结果';
-        modeHint.style.display = 'none';  // 隐藏模式切换提示
-    }
-}
-
-// 检查当前会话是否有复杂任务
-function checkCurrentSessionForComplexTasks() {
-    const container = document.getElementById('chatContainer');
-    const messages = container.querySelectorAll('.message.assistant');
-    
-    for (const msg of messages) {
-        const contentDiv = msg.querySelector('.message-content');
-        if (contentDiv && contentDiv.dataset.subtasks) {
-            return true;
-        }
-    }
-    
-    return false;
-}
 
 // 切换子任务面板
 function toggleSubtaskPanel() {
@@ -90,7 +26,7 @@ function toggleSubtaskPanel() {
                     <div style="text-align: center; padding: 40px 20px; color: #999;">
                         <div style="font-size: 48px; margin-bottom: 16px;">📋</div>
                         <p style="font-size: 16px; margin-bottom: 8px;">暂无子任务数据</p>
-                        <p style="font-size: 13px;">请先在"复杂任务"模式下执行一个任务</p>
+                        <p style="font-size: 13px;">请先执行一个复杂任务（如产业链分析、对比研究等）</p>
                     </div>
                 `;
             }
@@ -165,10 +101,8 @@ function showSubtasksForMessage(metadata) {
     };
     
     // 显示子任务按钮
-    document.getElementById('modeSubtask').style.display = 'block';
-    
-    // 切换到复杂任务模式
-    switchMode('complex');
+    const subtaskBtn = document.getElementById('modeSubtask');
+    if (subtaskBtn) subtaskBtn.style.display = 'block';
     
     // 打开子任务面板
     const panel = document.getElementById('subtaskPanel');
@@ -241,19 +175,9 @@ async function createNewSession() {
         <div class="empty-state">
             <div class="empty-state-icon">🦌</div>
             <h3 id="welcomeTitle">你好！我是你的 AI 助手</h3>
-            <p id="welcomeDesc">我可以帮你分析网页、处理数据、搜索信息，完成各种复杂任务</p>
-            
-            <!-- 模式切换提示 -->
-            <div class="mode-hint" id="modeHint">
-                <span class="mode-hint-icon">💡</span>
-                <span class="mode-hint-text">如果有复杂任务（多维度分析、对比研究等），可以切换到</span>
-                <button class="mode-hint-btn" onclick="switchMode('complex')">🚀 复杂模式</button>
-            </div>
+            <p id="welcomeDesc">我可以帮你搜索信息、分析产业链、处理数据，复杂任务会自动启用智能分析</p>
         </div>
     `;
-    
-    // 更新欢迎文本（根据当前模式）
-    updateWelcomeText(currentMode);
     
     renderSessionList();
     document.getElementById('messageInput').focus();
@@ -339,16 +263,9 @@ function showChatTitleForCurrentSession() {
 }
 
 // 使用示例（点击能力卡片或资讯）
-function useExample(exampleText, mode = 'normal') {
+function useExample(exampleText) {
     const input = document.getElementById('messageInput');
     input.value = exampleText;
     input.focus();
     autoResize(input);
-    
-    // 如果需要切换模式
-    if (mode === 'complex' && currentMode !== 'complex') {
-        switchMode('complex');
-    } else if (mode === 'normal' && currentMode !== 'normal') {
-        switchMode('normal');
-    }
 }
