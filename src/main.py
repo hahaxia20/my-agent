@@ -43,6 +43,17 @@ async def lifespan(app: FastAPI):
     # 打印配置摘要
     print_config_summary()
 
+    # 初始化 LangSmith 监控（如果启用）
+    if settings.LANGSMITH_ENABLED:
+        import os
+        os.environ["LANGSMITH_TRACING"] = "true"
+        os.environ["LANGCHAIN_PROJECT"] = settings.LANGSMITH_PROJECT
+        if settings.LANGCHAIN_API_KEY:
+            os.environ["LANGCHAIN_API_KEY"] = settings.LANGCHAIN_API_KEY
+        print(f"🔍 LangSmith 监控已启用，项目: {settings.LANGSMITH_PROJECT}")
+    else:
+        print("🔍 LangSmith 监控未启用（LANGSMITH_ENABLED=False）")
+
     # 预加载 Agent（可选）
     print("📦 预加载 Agent...")
     from src.core.agent import get_agent

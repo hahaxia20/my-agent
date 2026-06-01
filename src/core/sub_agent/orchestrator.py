@@ -12,6 +12,7 @@ from typing import List, Dict, Any, Optional
 
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import StructuredTool
+from langsmith import traceable
 
 from src.core.sub_agent.models import (
     SubAgentConfig,
@@ -78,6 +79,7 @@ class SubAgentOrchestrator:
         
         logger.info(f"🎭 [编排器] 初始化完成 - 最大并发: {self.config.max_concurrent_agents}")
     
+    @traceable(name="sub_agent_orchestrator", tags=["production", "orchestration"])
     async def execute(
         self,
         task: str,

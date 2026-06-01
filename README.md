@@ -21,7 +21,7 @@
 - **流式输出 (SSE)**：实时生成，打字机效果
 - **上下文管理**：智能对话历史压缩与重要性筛选
 - **多轮对话**：支持连续对话，保持上下文一致性
-- **会话持久化**：MongoDB 存储，支持会话管理
+- **会话持久化**：MongoDB 存储，独立 SessionManager 管理
 
 ### 🔗 产业链图谱
 - **Neo4j 知识图谱**：13 条产业链、576 个节点、1500+ 条关系
@@ -40,7 +40,7 @@
 ### 🎯 插件化 Skills 系统
 - **配置化定义**：基于 Markdown（SKILL.md）文件配置
 - **自动加载**：热插拔，无需重启服务
-- **支持资源**：脚本、参考文档、静态资源
+- **中间件注入**：通过 SkillMiddleware 运行时注入提示词
 
 ### 🛠️ 内置工具集
 - **Smart Graph Query**：产业链图谱语义查询（LLM 自动生成 Cypher）
@@ -51,9 +51,9 @@
 
 ### 🔐 安全与认证
 - **JWT 认证**：安全的用户身份验证
-- **CORS 配置**：跨域资源共享控制
+- **CORS 保护**：生产环境强制配置域名白名单，禁止通配符
 - **安全提示词**：结构化安全边界，防止提示注入
-- **配置管理**：环境变量驱动，敏感信息隔离
+- **线程安全**：Agent 单例采用双重检查锁（异步锁 + 同步线程锁）
 
 ---
 
@@ -108,6 +108,9 @@ TAVILY_API_KEY=your-tavily-key
 
 # JWT 密钥
 JWT_SECRET_KEY=your-secret-key
+
+# 生产环境必须配置 CORS 白名单（禁止使用 *）
+CORS_ORIGINS=["https://yourdomain.com"]
 ```
 
 ### 启动服务
@@ -152,6 +155,11 @@ uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload
 │   │  • Tool Calling  │  │  • Worker Pool       │ │
 │   └──────────────────┘  │  • Synthesizer       │ │
 │                         └──────────────────────┘ │
+│   ┌──────────────────┐  ┌──────────────────────┐ │
+│   │ Session Manager  │  │  Stream Handler      │ │
+│   │ • 会话 CRUD      │  │  • SSE 流式处理      │ │
+│   │ • 权限验证       │  │  • Cypher 过滤       │ │
+│   └──────────────────┘  └──────────────────────┘ │
 └──────────────────────┬───────────────────────────┘
                        │
 ┌──────────────────────▼───────────────────────────┐
@@ -159,7 +167,7 @@ uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload
 │   ┌──────────────────┐  ┌──────────────────────┐ │
 │   │  Skills          │  │  Tools               │ │
 │   │  • Markdown 配置 │  │  • Smart Graph Query │ │
-│   │  • 自动加载      │  │  • Web Search        │ │
+│   │  • 中间件注入    │  │  • Web Search        │ │
 │   └──────────────────┘  │  • Web Scraper       │ │
 │                         │  • Calculator / Time │ │
 │                         └──────────────────────┘ │
@@ -182,12 +190,13 @@ uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload
 |------|------|------|
 | API 路由 | `src/api/routes/` | RESTful 接口（Chat、Auth、Complex Tasks） |
 | Agent 核心 | `src/core/agent.py` | LangGraph ReAct Agent，工具调用与上下文管理 |
+| 会话管理 | `src/core/session_manager.py` | 会话 CRUD、权限验证、检查点管理（独立模块） |
 | Sub-Agent | `src/core/sub_agent/` | 复杂任务分解、并行执行、结果合成 |
 | 流式输出 | `src/core/stream/` | SSE 流式对话、Cypher 过滤、格式化 |
 | 上下文管理 | `src/core/context/` | 对话历史压缩、重要性筛选、系统提示词注入 |
 | 系统提示词 | `src/core/prompt/` | 多模型模板管理（default / qwen / gpt-4） |
 | 工具集 | `src/tools/` | Smart Graph Query、搜索、爬虫、计算器等 |
-| Skills | `src/skills/` | 插件化技能系统，Markdown 配置热加载 |
+| Skills | `src/skills/` | 插件化技能系统，Markdown 配置 + 中间件注入 |
 | 存储层 | `src/storage/` | MongoDB（会话持久化）、Neo4j（产业链图谱） |
 
 ---
@@ -309,7 +318,7 @@ LLM 转写为纯净自然语言答案
 
 ## Skills 系统
 
-Skills 是基于 Markdown 配置的插件化能力扩展系统，无需编写代码即可为 Agent 添加新能力。
+Skills 是基于 Markdown 配置的插件化能力扩展系统，通过 SkillMiddleware 在运行时注入提示词，无需编写代码即可为 Agent 添加新能力。
 
 ### 目录结构
 
@@ -376,6 +385,7 @@ my-agent/
 │   │   └── routes/                   # 路由（chat、auth、complex_tasks）
 │   ├── core/                         # 核心业务逻辑
 │   │   ├── agent.py                  # LangGraph ReAct Agent 主体
+│   │   ├── session_manager.py        # 会话管理器（独立模块，降低耦合）
 │   │   ├── tool_adapter.py           # 工具适配器（BaseTool → LangChain StructuredTool）
 │   │   ├── security.py               # 安全策略（输入过滤、提示注入防护）
 │   │   ├── context/                  # 上下文管理
@@ -388,11 +398,12 @@ my-agent/
 │   │   │   ├── decomposer.py         # 任务分解器
 │   │   │   ├── worker.py             # 子任务执行器
 │   │   │   ├── synthesizer.py        # 结果合成器
-│   │   │   └── orchestrator.py       # 编排主控制
+│   │   │   ├── orchestrator.py       # 编排主控制
+│   │   │   └── models.py             # 数据模型
 │   │   ├── prompt/                   # 系统提示词
 │   │   │   ├── manager.py            # 提示词管理器（按模型选择模板）
 │   │   │   ├── system_prompts.py     # 提示词加载器
-│   │   │   └── system_prompts_v1.0.json  # 提示词模板（default / qwen / gpt-4）
+│   │   │   └── system_prompts_v1.0.json  # 提示词模板
 │   │   ├── helpers/                  # 辅助工具
 │   │   │   ├── intent_classifier.py  # 意图分类器
 │   │   │   └── chat_helpers.py       # 聊天辅助函数

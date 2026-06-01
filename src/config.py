@@ -119,6 +119,20 @@ class Settings(BaseSettings):
     # ═══════════════════════════════════════
     SYSTEM_PROMPT_VERSION: str = "1.0"  # 提示词版本号，对应文件名 system_prompts_v{version}.json
 
+    # ══════════════════════════════════════
+    # LangSmith 监控配置
+    # ═══════════════════════════════════════
+    # 是否启用 LangSmith 追踪（需配置 LANGCHAIN_API_KEY 环境变量）
+    LANGSMITH_ENABLED: bool = False
+    # LangSmith 项目名（在 LangSmith UI 中分组查看）
+    LANGSMITH_PROJECT: str = "my-agent"
+    # LangSmith API Key（从 https://smith.langchain.com 获取）
+    LANGCHAIN_API_KEY: str = ""
+    # LangSmith 追踪开关（通常由 LANGSMITH_ENABLED 自动控制，无需手动设置）
+    LANGSMITH_TRACING: str = ""
+    # LangSmith API 端点（默认 https://api.smith.langchain.com，自托管时可修改）
+    LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
+
     # ═══════════════════════════════════════
     # 对话上下文管理配置（扁平化，支持环境变量）
     # ═══════════════════════════════════════

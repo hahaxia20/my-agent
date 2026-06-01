@@ -2,17 +2,15 @@
 对话 API 路由
 """
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
-from src.core.agent import get_agent, get_agent_sync
-
-from fastapi import APIRouter, HTTPException, Depends, Request
-from src.api.middleware.auth import get_current_user
-from fastapi.responses import StreamingResponse
 import logging
 
+from src.core.agent import get_agent
+from src.api.middleware.auth import get_current_user
 from src.core.logging.decorator import log_method_call
 
 logger = logging.getLogger(__name__)
@@ -92,7 +90,6 @@ async def list_sessions(req: Request, limit: int = 20, offset: int = 0):
         # 从 Token 获取用户
         user_id = await get_current_user(req)
 
-        # 修复：添加 await
         agent = await get_agent()
         sessions = await agent.list_sessions(
             user_id=user_id,
@@ -128,7 +125,6 @@ async def get_session(session_id: str, req: Request):
         # 从 Token 获取用户
         user_id = await get_current_user(req)
 
-        # 修复：添加 await
         agent = await get_agent()
         history = await agent.get_session_history(session_id, user_id=user_id)
 
@@ -164,27 +160,12 @@ async def delete_session(session_id: str, req: Request):
         user_id = await get_current_user(req)
         agent = await get_agent()
 
-        # 获取会话并验证权限
-        session = await agent.db.get_session(session_id)
-
-        if not session:
-            raise HTTPException(
-                status_code=404,
-                detail=f"会话不存在: {session_id}"
-            )
-
-        if session.get("user_id") != user_id:
-            raise HTTPException(
-                status_code=403,
-                detail="无权删除他人的会话"
-            )
-
-        # 删除会话
+        # 直接调用 SessionManager，避免重复查询
         deleted = await agent.delete_session(session_id, user_id)
         if not deleted:
             raise HTTPException(
                 status_code=404,
-                detail="会话删除失败"
+                detail="会话不存在或无权删除"
             )
 
         logger.info(f"✅ 会话已删除: {session_id}, user: {user_id}")
@@ -213,7 +194,6 @@ async def chat_stream(request: ChatRequest, req: Request):
         try:
             user_id = await get_current_user(req)
 
-            # 这里已经正确使用了 await
             agent = await get_agent()
 
             # 配置流式参数
