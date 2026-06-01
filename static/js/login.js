@@ -2,7 +2,8 @@
    My Agent - 登录页面逻辑
    ======================================== */
 
-const API_BASE_URL = 'http://localhost:8001';
+// API 基础配置（空字符串表示同源，由 Nginx 代理转发）
+const API_BASE_URL = '';
 
 // 切换标签
 function switchTab(tab) {
