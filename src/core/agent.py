@@ -767,8 +767,16 @@ class MyAgent:
 
 # ====================== 单例模式 ======================
 _agent: Optional[MyAgent] = None
-_agent_lock = asyncio.Lock()
+_agent_lock: Optional[asyncio.Lock] = None  # 延迟初始化，避免模块加载时无 event loop
 _sync_agent_lock = None  # 延迟初始化 threading.Lock，避免模块加载时依赖
+
+
+def _get_agent_lock() -> asyncio.Lock:
+    """获取异步锁（延迟初始化）"""
+    global _agent_lock
+    if _agent_lock is None:
+        _agent_lock = asyncio.Lock()
+    return _agent_lock
 
 
 def _get_sync_lock():
@@ -784,7 +792,7 @@ async def get_agent() -> MyAgent:
     """异步获取 Agent 单例"""
     global _agent
     if _agent is None:
-        async with _agent_lock:
+        async with _get_agent_lock():
             if _agent is None:
                 _agent = MyAgent()
     return _agent
