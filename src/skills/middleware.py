@@ -39,7 +39,19 @@ def load_skill(skill_name: str) -> str:
     
     logger.info(f"✅ [Skill 加载成功] {skill_name} ({len(content)} 字符)")
     
-    return f"Loaded skill: {skill_name}\n\n{content}"
+    # 构建响应：指令 + 绑定工具提示（渐进式引导）
+    result_parts = [f"Loaded skill: {skill_name}\n\n{content}"]
+    
+    resolved_tools = getattr(skill, 'resolved_tools', [])
+    if resolved_tools:
+        tools_str = ', '.join(f'`{t}`' for t in resolved_tools)
+        result_parts.append(
+            f"\n\n---\n🔧 **本技能配套工具**: {tools_str}\n"
+            "请在执行任务时优先使用以上工具。"
+        )
+        logger.info(f"🔧 [Skill 绑定工具] {skill_name} → {resolved_tools}")
+    
+    return "".join(result_parts)
 
 
 class SkillMiddleware(AgentMiddleware):
@@ -49,12 +61,9 @@ class SkillMiddleware(AgentMiddleware):
     
     def __init__(self):
         """Initialize and generate the skills prompt from registry."""
-        skills_list = []
-        for skill in skill_registry.get_all():
-            skills_list.append(f"- **{skill.name}**: {skill.description}")
-        
-        self.skills_prompt = "\n".join(skills_list)
-        logger.info(f"📦 SkillMiddleware 初始化，加载 {len(skills_list)} 个 Skills")
+        # 使用 registry 的方法获取含工具提示的 Skill 列表
+        self.skills_prompt = skill_registry.get_skills_metadata_list()
+        logger.info(f"📦 SkillMiddleware 初始化，加载 {len(skill_registry.get_all())} 个 Skills")
     
     def wrap_model_call(
         self,

@@ -84,17 +84,19 @@ class SubAgentOrchestrator:
         session_id: Optional[str] = None,
         user_id: str = "anonymous",
         decomposition_strategy: str = "auto",
-        progress_callback=None  # 新增：进度回调函数
+        progress_callback=None,
+        context: Optional[str] = None
     ) -> OrchestratorResult:
         """
         执行复杂任务 (完整流程)
         
         Args:
-            task: 复杂任务描述
+            task: 复杂任务描述（纯任务，不含历史）
             session_id: 会话 ID
             user_id: 用户 ID
             decomposition_strategy: 分解策略
             progress_callback: 进度回调函数 async callback(event_type, data)
+            context: 对话历史背景（仅供 Decomposer 理解意图，不作为子任务执行）
         
         Returns:
             OrchestratorResult: 最终编排结果
@@ -121,7 +123,7 @@ class SubAgentOrchestrator:
             if progress_callback:
                 await progress_callback("decompose_start", {"task": task})
             
-            decomposition = await self._decompose_task(task, decomposition_strategy)
+            decomposition = await self._decompose_task(task, decomposition_strategy, context=context)
             orchestrator_result.decomposition = decomposition
             
             if progress_callback:
@@ -245,9 +247,16 @@ class SubAgentOrchestrator:
     async def _decompose_task(
         self, 
         task: str, 
-        strategy: str
+        strategy: str,
+        context: Optional[str] = None
     ) -> TaskDecomposition:
-        """步骤 1: 分解任务"""
+        """步骤 1: 分解任务
+        
+        Args:
+            task: 纯任务描述
+            strategy: 分解策略
+            context: 对话历史背景（传给 Decomposer，帮助理解意图）
+        """
         if not self.config.enable_decomposition:
             # 不分解，直接创建单任务
             from src.core.sub_agent.models import SubTask
@@ -266,7 +275,11 @@ class SubAgentOrchestrator:
                 decomposition_strategy="sequential"
             )
         
-        return await self.decomposer.decompose(task, strategy)
+        return await self.decomposer.decompose(
+            task,
+            strategy,
+            context={"conversation_history": context} if context else None
+        )
     
     async def _execute_sub_tasks(
         self,

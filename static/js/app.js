@@ -16,16 +16,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('✅ marked 库已加载');
     }
 
-    // 3. 初始化欢迎文本
-    updateWelcomeText(currentMode);
-    
-    // 4. 显示当前用户
+    // 3. 显示当前用户
     displayCurrentUser();
 
-    // 5. 加载会话列表
+    // 4. 加载会话列表
     await loadSessions();
 
-    // 6. 聚焦输入框
+    // 5. 聚焦输入框
     document.getElementById('messageInput').focus();
 
     console.log('✅ My Agent 初始化完成');

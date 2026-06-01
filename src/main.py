@@ -10,7 +10,7 @@ from src.api.middleware import setup_cors
 from src.api.routes import chat_router
 from src.api.routes import auth_router
 from src.api.routes import complex_tasks_router
-from src.core.logging_config import setup_logging
+from src.core.logging.config import setup_logging
 
 # ═══════════════════════════════════════
 # 应用生命周期

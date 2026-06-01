@@ -12,7 +12,7 @@ from typing import List, Optional, Dict, Any
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 import logging
 
-from src.core.logging_decorator import log_method_call
+from src.core.logging.decorator import log_method_call
 
 logger = logging.getLogger(__name__)
 

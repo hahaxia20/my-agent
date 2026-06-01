@@ -28,9 +28,9 @@ class Neo4jManager:
   - sid: 唯一标识，格式为"产业链名_序号_环节名"
   - name: 环节名称（如"制氢技术与装备"、"燃料电池系统"、"核电工程建设"等）
   - sequence: 序号（整数，表示在产业链中的顺序）
-  - position: 位置标签（如"上游：制氢"、"中游：储运与加氢"、"下游：交通应用"等）
+  - position: 位置标签（如"上游：制氢"、"中游：储运与加氢"、"下游：交通应用"、"消费：配套"等）
   - chain: 所属产业链名称
-- Position: 位置标签节点，属性：name（如"上游：资源开采"、"中游：核心制造"、"下游：终端应用"等）
+- Position: 位置标签节点，属性：name（如"上游：资源开采"、"中游：核心制造"、"下游：终端应用"、"消费：配套与标准"、"消费：技术服务"等）
 - IndustryCode: 行业小类代码，属性：code（4位数字代码）、full_name（行业名称，如"放射性金属矿采选"）
 
 关系类型：
@@ -42,21 +42,29 @@ class Neo4jManager:
 ## 查询规则
 
 1. 查询某产业链的环节：MATCH (s:Segment)-[:BELONGS_TO_CHAIN]->(c:IndustryChain {{name: '氢能'}}) RETURN s.name, s.position, s.sequence ORDER BY s.sequence
-2. 查询上游/中游/下游环节：MATCH (s:Segment) WHERE s.chain = '氢能' AND s.position CONTAINS '上游' RETURN s.name, s.position
-3. 使用 CONTAINS 进行模糊匹配，不要用 = 精确匹配产业链名称
-4. 查询上下游依赖关系：MATCH (a:Segment)-[:DEPENDS_ON]->(b:Segment) WHERE a.chain = '氢能' RETURN a.name, b.name
-5. 查询行业代码：MATCH (s:Segment)-[:HAS_CODE]->(ic:IndustryCode) RETURN s.name, ic.code, ic.full_name
-6. 查询有哪些产业链：MATCH (c:IndustryChain) RETURN c.name
-7. 查询结果优先返回 name、position、sequence、chain
-8. 只生成只读查询，禁止 CREATE/MERGE/DELETE
+2. 查询上游/中游/下游/消费环节：MATCH (s:Segment) WHERE s.chain = '氢能' AND s.position CONTAINS '上游' RETURN s.name, s.position
+   注：position 包含四大类：上游、中游、下游、消费，均可用 CONTAINS 查询
+3. **重要：当用户询问整个产业链（如"核能的产业链有哪些"、"氢能产业链结构"等），不加任何 position 过滤，必须返回该产业链的全部环节（上中下游+消费）**
+4. 使用 CONTAINS 进行模糊匹配，不要用 = 精确匹配产业链名称
+5. 查询上下游依赖关系：MATCH (a:Segment)-[:DEPENDS_ON]->(b:Segment) WHERE a.chain = '氢能' RETURN a.name, b.name
+6. 查询行业代码：MATCH (s:Segment)-[:HAS_CODE]->(ic:IndustryCode) RETURN s.name, ic.code, ic.full_name
+7. 查询有哪些产业链：MATCH (c:IndustryChain) RETURN c.name
+8. 查询结果优先返回 name、position、sequence、chain
+9. 只生成只读查询，禁止 CREATE/MERGE/DELETE
 
 ## 示例
+
+问：核能的产业链有哪些？
+答：MATCH (s:Segment) WHERE s.chain CONTAINS '核能' RETURN s.name, s.position, s.sequence ORDER BY s.sequence
 
 问：氢能产业链的上游有哪些环节？
 答：MATCH (s:Segment) WHERE s.chain CONTAINS '氢能' AND s.position CONTAINS '上游' RETURN s.name, s.position, s.sequence ORDER BY s.sequence
 
 问：氢能产业链有哪些下游应用？
 答：MATCH (s:Segment) WHERE s.chain CONTAINS '氢能' AND s.position CONTAINS '下游' RETURN s.name, s.position, s.sequence ORDER BY s.sequence
+
+问：氢能产业链的消费环节有哪些？
+答：MATCH (s:Segment) WHERE s.chain CONTAINS '氢能' AND s.position CONTAINS '消费' RETURN s.name, s.position, s.sequence ORDER BY s.sequence
 
 问：图谱中有哪些产业链？
 答：MATCH (c:IndustryChain) RETURN c.name
@@ -84,14 +92,22 @@ class Neo4jManager:
 ## 严格要求
 1. 只输出自然语言答案，禁止输出任何 Cypher 查询语句、MATCH/RETURN/WHERE/LIMIT 等关键词
 2. 禁止输出任何技术细节、查询过程、调试信息
-3. 如果查询结果为空或无法回答，直接说"图谱中暂未找到与该问题匹配的数据，请尝试换一种描述方式。"
-4. 不要提及"根据查询结果"、"基于图谱数据"等元信息
+3. 如果查询结果为空或无法回答，直接说“图谱中暂未找到与该问题匹配的数据，请尝试换一种描述方式。”
+4. 不要提及“根据查询结果”、“基于图谱数据”等元信息
+5. 必须完整呈现所有返回的数据，不得截断、省略或自行归纳为“两个环节”“几大环节”等概括性说法
+6. 当查询结果包含上游、中游、下游、消费四个位置分类时，必须四个分类全部介绍，不得只说其中一部分
+7. 不得自行推断或补充查询结果中没有出现的信息
+8. 禁止说出“主要分为X个环节”这类总结性计数，直接按分类依次介绍即可
 
 ## 示例
 
 查询结果: [name:制氢技术与装备, position:上游：制氢], [name:制氢原料与能源, position:上游：制氢]
 问题: 氢能产业链的上游有哪些环节？
 回答: 氢能产业链的上游环节包括制氢原料与能源、制氢技术与装备。
+
+查询结果: [name:袘变资源开采, position:上游：资源开采], [name:聚变资源开采, position:上游：资源开采], [name:核能通用材料冶炼与压延, position:中游：制造与流通], [name:核能发电与输配, position:下游：终端应用], [name:核技术应用服务, position:消费：技术服务]
+问题: 核能的产业链有哪些？
+回答: 核能产业链包含以下环节：上游的资源开采环节包括袘变资源开采、聚变资源开采；中游的制造与流通环节包括核能通用材料冶炼与压延；下游的终端应用环节包括核能发电与输配；消费环节包括核技术应用服务。
 
 查询结果: [name:核能, chain:核能], [name:氢能, chain:氢能]
 问题: 图谱中有哪些产业链？
@@ -110,8 +126,14 @@ class Neo4jManager:
 ## 回答"""
 
     # ── 输出清洗规则 ──────────────────────────────────────────
+    # 匹配完整 Cypher 语句（MATCH...RETURN...）
     _CYPHER_PATTERN = re.compile(
-        r"(?:MATCH|CALL|WITH|UNWIND)\b[\s\S]*?\bRETURN\b[\s\S]*?(?=[\u4e00-\u9fff]|\n\n|$)",
+        r"(?:(?:MATCH|CALL|WITH|UNWIND)\b[\s\S]*?RETURN\b[^\u4e00-\u9fff\n]*)",
+        re.IGNORECASE,
+    )
+    # 匹配孤立的 Cypher 片段（只有 RETURN 没有 MATCH，不跨行、不匹配中文）
+    _RETURN_FRAGMENT = re.compile(
+        r"RETURN[ \t]+[a-zA-Z_][a-zA-Z0-9_.\,\[ \t]*(?:ORDER BY[a-zA-Z0-9_.\,\[ \t]+)?(?:LIMIT[ \t]+\d+)?",
         re.IGNORECASE,
     )
     _EMPTY_ANSWERS = {
@@ -349,12 +371,23 @@ class Neo4jManager:
                 verbose=False,
                 validate_cypher=True,
                 allow_dangerous_requests=True,
-                return_intermediate_steps=False,
+                return_intermediate_steps=True,
+                top_k=100,
             )
 
             captured = io.StringIO()
             with contextlib.redirect_stdout(captured):
                 response = chain.invoke({"query": question})
+
+            # 记录中间步骤（生成的 Cypher 和实际返回行数）用于调试
+            steps = response.get("intermediate_steps", [])
+            for step in steps:
+                if "query" in step:
+                    logger.info(f"🔍 [smart_query Cypher]: {step['query']}")
+                if "context" in step:
+                    ctx = step["context"]
+                    row_count = len(ctx) if isinstance(ctx, list) else "N/A"
+                    logger.info(f"📊 [smart_query 返回行数]: {row_count}")
 
             if captured.getvalue().strip():
                 logger.debug(f"[smart_query debug]\n{captured.getvalue().strip()}")
@@ -370,7 +403,11 @@ class Neo4jManager:
 
     def _clean_answer(self, raw: str) -> str:
         """剥离泄漏的 Cypher，处理空结果降级"""
+        # 第一步：清理完整 Cypher 语句（MATCH...RETURN...）
         cleaned = self._CYPHER_PATTERN.sub("", raw).strip()
+        # 第二步：清理孤立的 RETURN 片段（如 RETURN s.name, s.position...）
+        cleaned = self._RETURN_FRAGMENT.sub("", cleaned).strip()
+        # 第三步：清理多余空行
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
         if (
             not cleaned

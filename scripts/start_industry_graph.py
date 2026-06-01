@@ -15,7 +15,7 @@ async def main():
     print("="*60 + "\n")
     
     # 检查 Excel 文件
-    excel_file = "产业链（结构）标签-0429.xlsx"
+    excel_file = "data/产业链（结构）标签-0429.xlsx"
     
     if not Path(excel_file).exists():
         print(f"❌ Excel 文件不存在: {excel_file}")

@@ -20,7 +20,10 @@ class SkillMetadata(BaseModel):
     license: Optional[str] = Field(None, description="许可证")
     compatibility: Optional[str] = Field(None, description="兼容性要求")
     metadata: Optional[Dict[str, str]] = Field(None, description="自定义元数据")
-    allowed_tools: Optional[str] = Field(None, description="允许使用的工具列表")
+    allowed_tools: Optional[List[str]] = Field(
+        default=None,
+        description="本 Skill 配套使用的工具列表（渐进式引导，非强制限制）"
+    )
 
     @validator('name')
     def validate_name(cls, v):
@@ -40,6 +43,15 @@ class SkillMetadata(BaseModel):
             raise ValueError("description 不能超过 1024 个字符")
         return v
 
+    @validator('allowed_tools', pre=True)
+    def validate_allowed_tools(cls, v):
+        if v is None:
+            return None
+        # 支持逗号分隔字符串: "web_scraper, calculator"
+        if isinstance(v, str):
+            return [t.strip() for t in v.split(',') if t.strip()]
+        return v
+
 
 class SkillConfig(BaseModel):
     """完整的 Skill 配置"""
@@ -49,6 +61,10 @@ class SkillConfig(BaseModel):
     scripts: List[str] = Field(default_factory=list)
     references: List[str] = Field(default_factory=list)
     assets: List[str] = Field(default_factory=list)
+    resolved_tools: List[str] = Field(
+        default_factory=list,
+        description="经验证存在的配套工具列表"
+    )
 
 
 # ==================== Skill 基类 ====================
@@ -77,6 +93,7 @@ class MarkdownSkill(BaseSkill):
         # 阶段 1：只存储元数据
         self.name = self.config.metadata.name
         self.description = self.config.metadata.description
+        self.resolved_tools = self.config.resolved_tools  # 经验证存在的工具
         self._instructions = None  # 延迟加载
         
         self.skill_path = skill_path
@@ -112,13 +129,27 @@ class MarkdownSkill(BaseSkill):
         references = self._extract_file_links(instructions, r'\[\$\.references/(.+?)\]')
         assets = self._extract_file_links(instructions, r'\[\$\.assets/(.+?)\]')
         
+        # 验证 allowed_tools 中声明的工具是否在 tool_manager 中存在
+        resolved_tools = []
+        allowed_tools = metadata.allowed_tools or []
+        if allowed_tools:
+            from src.tools.manager import tool_manager
+            for tool_name in allowed_tools:
+                if tool_manager.has_tool(tool_name):
+                    resolved_tools.append(tool_name)
+                else:
+                    logger.warning(
+                        f"⚠️ Skill '{metadata.name}' 声明的工具 '{tool_name}' 不存在，跳过"
+                    )
+        
         return SkillConfig(
             metadata=metadata,
             instructions=instructions,
             skill_path=skill_path,
             scripts=scripts,
             references=references,
-            assets=assets
+            assets=assets,
+            resolved_tools=resolved_tools
         )
     
     def _extract_file_links(self, text: str, pattern: str) -> List[str]:
@@ -190,13 +221,17 @@ class SkillRegistry:
         return skill_name in self.skills
     
     def get_skills_metadata_list(self) -> str:
-        """获取 Skill 元数据列表（用于系统提示词）"""
+        """获取 Skill 元数据列表（用于系统提示词，含配套工具提示）"""
         if not self.skills:
             return "暂无可用技能"
         
         skill_lines = []
         for skill in self.skills.values():
-            skill_lines.append(f"- **{skill.name}**: {skill.description}")
+            line = f"- **{skill.name}**: {skill.description}"
+            if skill.resolved_tools:
+                tools_str = ', '.join(f'`{t}`' for t in skill.resolved_tools)
+                line += f"（配套工具: {tools_str}）"
+            skill_lines.append(line)
         
         return "\n".join(skill_lines)
     

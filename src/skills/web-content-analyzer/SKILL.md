@@ -3,6 +3,8 @@ name: web-content-analyzer
 description: 深度分析网页内容，提取关键信息，生成内容摘要，并检测 SEO 问题。当用户要求分析、评估、审查网页时使用此技能（不是简单抓取）。
 license: MIT
 compatibility: 需要 Python 3.10+、互联网访问权限和 web_scraper 工具
+allowed_tools:
+  - web_scraper
 metadata:
   author: My Agent Team
   version: "1.0.0"
