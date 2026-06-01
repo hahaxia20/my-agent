@@ -74,8 +74,8 @@ git clone https://github.com/YOUR_USERNAME/my-agent.git
 cd my-agent
 
 # 2. 创建并激活虚拟环境
-conda create -n my-agent python=3.12
-conda activate my-agent
+conda create -n my-deerflow python=3.12
+conda activate my-deerflow
 
 # 3. 安装依赖
 pip install -r requirements.txt
@@ -421,7 +421,10 @@ my-agent/
 │   ├── skills/                       # Skills 插件系统
 │   │   ├── manager.py                # Skill 自动加载管理器
 │   │   ├── middleware.py             # Skill 中间件（运行时注入提示词）
-│   │   └── */SKILL.md                # Skill 定义文件
+│   │   ├── web-content-analyzer/     # 网页内容分析 Skill
+│   │   │   └── SKILL.md
+│   │   └── data-analysis/            # 数据分析 Skill
+│   │       └── SKILL.md
 │   ├── storage/                      # 存储层
 │   │   ├── mongodb.py                # MongoDB 连接（会话持久化 + 检查点）
 │   │   └── neo4j.py                  # Neo4j 管理器（数据导入 + 语义查询）
