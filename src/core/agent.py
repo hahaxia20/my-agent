@@ -56,6 +56,8 @@ from src.skills.manager import skill_registry
 from src.core.sub_agent import SubAgentOrchestrator
 from src.core.sub_agent.models import SubAgentConfig
 from src.core.stream.handler import StreamHandler
+from src.core.session_manager import SessionManager
+from src.core.agent_monitor import AgentMonitor
 
 # 日志初始化 (注意: 只在主入口调用 setup_logging)
 logger = logging.getLogger(__name__)
@@ -130,13 +132,16 @@ class MyAgent:
         # 并发控制
         self._semaphore = asyncio.Semaphore(self.config.max_concurrent_requests)
         
-        # 调用统计
-        self.tool_call_stats: Dict[str, Dict[str, Any]] = {}
+        # 监控器（工具调用统计、健康检查）
+        self.monitor = AgentMonitor()
         
         # 初始化 LLM、工具、检查点
         self.llm = self._init_llm()
         self.tools = self._init_tools()
         self.checkpointer = self._init_checkpointer() if self.config.enable_checkpoint else None
+        
+        # 初始化会话管理器（拆分自 agent.py，降低耦合）
+        self.session_manager = SessionManager(db=self.db, checkpointer=self.checkpointer)
         
         # 初始化产业链图谱工具（如果 Neo4j 可用）
         self._init_industry_graph_tools()
@@ -210,14 +215,8 @@ class MyAgent:
         return tools
 
     def _record_tool_call(self, tool_name: str, duration: float, success: bool = True):
-        """记录工具调用统计信息"""
-        if tool_name not in self.tool_call_stats:
-            self.tool_call_stats[tool_name] = {"count": 0, "total_time": 0.0, "errors": 0}
-
-        self.tool_call_stats[tool_name]["count"] += 1
-        self.tool_call_stats[tool_name]["total_time"] += duration
-        if not success:
-            self.tool_call_stats[tool_name]["errors"] += 1
+        """记录工具调用统计信息（委托给 AgentMonitor）"""
+        self.monitor.record_tool_call(tool_name, duration, success)
 
     def _init_checkpointer(self) -> Optional[MongoDBSaver]:
         """初始化 MongoDB 检查点 (用于会话状态持久化)"""
@@ -314,11 +313,8 @@ class MyAgent:
         return check_input_security(user_query, session_id)
 
     async def _ensure_session(self, session_id: Optional[str], user_id: str, title: str) -> str:
-        """确保会话存在，不存在则创建"""
-        if not session_id:
-            session_id = await self.db.create_session(user_id=user_id, title=title)
-            logger.info(f"📝 创建新会话: {session_id}")
-        return session_id
+        """确保会话存在，不存在则创建（委托给 SessionManager）"""
+        return await self.session_manager.ensure_session(session_id, user_id, title)
 
     @staticmethod
     def _format_subtask_results(sub_agent_results) -> List[Dict[str, Any]]:
@@ -508,20 +504,14 @@ class MyAgent:
         )
 
     def _log_tool_call_stats(self):
-        """打印工具调用统计信息"""
-        if self.tool_call_stats:
-            logger.info(f"📊 [调用统计] 工具: {len(self.tool_call_stats)} 个")
-            for tool_name, stats in self.tool_call_stats.items():
-                avg_time = stats["total_time"] / stats["count"] if stats["count"] > 0 else 0
-                logger.debug(
-                    f"   工具 [{tool_name}]: 调用{stats['count']}次, "
-                    f"平均{avg_time:.2f}s, 错误{stats['errors']}次"
-                )
+        """打印工具调用统计信息（委托给 AgentMonitor）"""
+        self.monitor.log_tool_call_stats()
 
     # ───────────────────────────────────────────────────────
     # 4.4 复杂任务处理 (Sub-Agent 编排)
     # ───────────────────────────────────────────────────────
 
+    @traceable(name="agent_complex_chat", tags=["production", "complex"])
     @log_method_call(prefix="[Agent-复杂任务] ", log_duration=True)
     async def complex_chat(
             self,
@@ -640,6 +630,7 @@ class MyAgent:
 
     # ========== 流式对话（委托给 StreamHandler） ==========
 
+    @traceable(name="agent_stream", tags=["production", "streaming"])
     async def stream(
             self,
             user_query: str,
@@ -738,23 +729,8 @@ class MyAgent:
             session_id: str,
             user_id: str = "anonymous"
     ) -> Dict[str, Any]:
-        """获取会话历史（业务数据库）"""
-        session = await self.db.get_session(session_id)
-        if not session or session.get("user_id") != user_id:
-            logger.warning(f"无权访问会话: {session_id}, user={user_id}")
-            return {"success": False, "error": "无权访问"}
-
-        logger.info(f"获取会话历史: {session_id}, 消息数: {session['metadata']['message_count']}")
-
-        return {
-            "success": True,
-            "session_id": str(session["_id"]),
-            "title": session["title"],
-            "messages": session["messages"],
-            "message_count": session["metadata"]["message_count"],
-            "created_at": session["metadata"]["created_at"],
-            "updated_at": session["metadata"]["updated_at"]
-        }
+        """获取会话历史（委托给 SessionManager）"""
+        return await self.session_manager.get_session_history(session_id, user_id)
 
     async def list_sessions(
             self,
@@ -762,100 +738,46 @@ class MyAgent:
             limit: int = 20,
             offset: int = 0
     ) -> List[Dict[str, Any]]:
-        """列出用户的所有会话"""
-        sessions = await self.db.list_sessions(
-            user_id=user_id,
-            limit=limit,
-            offset=offset
-        )
-
-        logger.info(f"列出用户会话: {user_id}, 数量: {len(sessions)}")
-
-        return [{
-            "session_id": str(s["_id"]),
-            "title": s["title"],
-            "message_count": s["metadata"]["message_count"],
-            "updated_at": s["metadata"]["updated_at"]
-        } for s in sessions]
+        """列出用户的所有会话（委托给 SessionManager）"""
+        return await self.session_manager.list_sessions(user_id, limit, offset)
 
     async def delete_session(self, session_id: str, user_id: str = "anonymous") -> bool:
-        """删除会话"""
-        session = await self.db.get_session(session_id)
-        if not session or session.get("user_id") != user_id:
-            logger.warning(f"无权删除会话: {session_id}, user={user_id}")
-            return False
+        """删除会话（委托给 SessionManager）"""
+        return await self.session_manager.delete_session(session_id, user_id)
 
-        await self.db.delete_session(session_id)
-
-        if self.checkpointer:
-            try:
-                await self.checkpointer.adelete_thread(session_id)
-                logger.info(f"✅ 删除会话检查点: {session_id}")
-            except Exception as e:
-                logger.warning(f"删除检查点失败: {e}")
-
-        logger.info(f"✅ 删除会话: {session_id}")
-        return True
-
-    # ========== 统计与健康检查 ==========
+    # ========== 统计与健康检查（委托给 AgentMonitor） ==========
 
     async def health_check(self) -> Dict[str, Any]:
-        """健康检查"""
-        logger.info("🏥 执行健康检查")
-
-        checks = {
-            "llm": False,
-            "mongodb": False,
-            "tools": False,
-            "checkpointer": False
-        }
-
-        try:
-            await self.llm.ainvoke("ping")
-            checks["llm"] = True
-            logger.debug("✅ LLM 健康检查通过")
-        except Exception as e:
-            logger.error(f"❌ LLM 健康检查失败: {e}")
-
-        try:
-            await self.db.ping()
-            checks["mongodb"] = True
-            logger.debug("✅ MongoDB 健康检查通过")
-        except Exception as e:
-            logger.error(f"❌ MongoDB 健康检查失败: {e}")
-
-        checks["tools"] = len(self.tools) > 0
-        checks["checkpointer"] = self.checkpointer is not None
-
-        all_healthy = all(checks.values())
-
-        status = "healthy" if all_healthy else "unhealthy"
-        logger.info(f"🏥 健康检查结果: {status}")
-
-        return {
-            "status": status,
-            "checks": checks,
-            "timestamp": datetime.now().isoformat()
-        }
+        """健康检查（委托给 AgentMonitor）"""
+        return await self.monitor.health_check(
+            llm=self.llm,
+            db=self.db,
+            tools=self.tools,
+            checkpointer=self.checkpointer
+        )
 
     async def get_call_stats(self) -> Dict[str, Any]:
-        """获取工具/技能调用统计"""
-        return {
-            "tools": self.tool_call_stats,
-            "total_tool_calls": sum(s["count"] for s in self.tool_call_stats.values()),
-            "tool_error_rate": sum(s["errors"] for s in self.tool_call_stats.values()) / max(1, sum(
-                s["count"] for s in self.tool_call_stats.values()))
-        }
+        """获取工具/技能调用统计（委托给 AgentMonitor）"""
+        return self.monitor.get_tool_call_stats()
 
     async def reset_stats(self):
-        """重置调用统计"""
-        self.tool_call_stats.clear()
-        logger.info("📊 调用统计已重置")
+        """重置调用统计（委托给 AgentMonitor）"""
+        self.monitor.reset_stats()
 
 
 # ====================== 单例模式 ======================
 _agent: Optional[MyAgent] = None
 _agent_lock = asyncio.Lock()
+_sync_agent_lock = None  # 延迟初始化 threading.Lock，避免模块加载时依赖
+
+
+def _get_sync_lock():
+    """获取同步锁（延迟初始化）"""
+    global _sync_agent_lock
+    if _sync_agent_lock is None:
+        import threading
+        _sync_agent_lock = threading.Lock()
+    return _sync_agent_lock
 
 
 async def get_agent() -> MyAgent:
@@ -869,8 +791,10 @@ async def get_agent() -> MyAgent:
 
 
 def get_agent_sync() -> MyAgent:
-    """同步获取 Agent 单例（用于非异步上下文）"""
+    """同步获取 Agent 单例（线程安全）"""
     global _agent
     if _agent is None:
-        _agent = MyAgent()
+        with _get_sync_lock():
+            if _agent is None:
+                _agent = MyAgent()
     return _agent
