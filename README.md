@@ -10,7 +10,9 @@
   <a href="#架构设计">架构</a> •
   <a href="#api-文档">API</a> •
   <a href="#产业链图谱">产业链图谱</a> •
-  <a href="#技术栈">技术栈</a>
+  <a href="#skills-系统">Skills</a> •
+  <a href="#技术栈">技术栈</a> •
+  <a href="#开发指南">开发指南</a>
 </p>
 
 ---
@@ -26,9 +28,6 @@
 ### 🔗 产业链图谱
 - **Neo4j 知识图谱**：13 条产业链、576 个节点、1500+ 条关系
 - **语义智能查询**：LLM 理解自然语言意图，自动生成 Cypher 并返回纯净答案
-- **ECharts 力导向图**：交互式可视化，节点拖拽，边自动跟随
-- **双 Tab 界面**：对话与图谱独立 Tab，职责分离
-- **关键词联动**：对话中识别产业链术语，一键跳转图谱
 - **快捷入口**：新建会话留白区域显示产业链快捷按钮
 
 ### 🧩 Sub-Agent 编排系统
@@ -54,6 +53,11 @@
 - **CORS 保护**：生产环境强制配置域名白名单，禁止通配符
 - **安全提示词**：结构化安全边界，防止提示注入
 - **线程安全**：Agent 单例采用双重检查锁（异步锁 + 同步线程锁）
+
+### 📊 可观测性（LangSmith）
+- **链路追踪**：可选启用 LangSmith，追踪每次 LLM 调用与工具执行
+- **项目分组**：按项目名在 LangSmith UI 中分组查看
+- **Agent 监控**：内置 AgentMonitor，统计工具调用次数、耗时、错误率
 
 ---
 
@@ -109,6 +113,11 @@ TAVILY_API_KEY=your-tavily-key
 
 # JWT 密钥
 JWT_SECRET_KEY=your-secret-key
+
+# LangSmith 监控（可选）
+LANGSMITH_ENABLED=false
+LANGSMITH_PROJECT=my-agent
+LANGCHAIN_API_KEY=your-langsmith-key
 
 # 生产环境必须配置 CORS 白名单（禁止使用 *）
 CORS_ORIGINS=["https://yourdomain.com"]
@@ -179,6 +188,8 @@ cp .env.example .env
 | `MONGODB_URL` | 改为 `mongodb://admin:密码@host.docker.internal:27017` |
 | `NEO4J_URI` | 改为 `bolt://host.docker.internal:7687` |
 | `CORS_ORIGINS` | 改为具体域名，如 `["https://yourdomain.com"]`（禁止 `*`） |
+| `LANGSMITH_ENABLED` | 是否启用 LangSmith 链路追踪（`true` / `false`） |
+| `LANGCHAIN_API_KEY` | LangSmith API Key（启用时必填，从 [smith.langchain.com](https://smith.langchain.com) 获取） |
 
 ```bash
 # 2. 确保 MongoDB 和 Neo4j 容器已在运行
@@ -226,7 +237,7 @@ docker compose logs -f backend
 ┌──────────────────────────────────────────────────┐
 │                  Frontend                        │
 │      index.html / login.html / static/           │
-│           (Vanilla JS + SSE + ECharts)           │
+│           (Vanilla JS + SSE)                     │
 └──────────────────────┬───────────────────────────┘
                        │ HTTP / SSE
 ┌──────────────────────▼───────────────────────────┐
@@ -250,6 +261,10 @@ docker compose logs -f backend
 │   │ • 会话 CRUD      │  │  • SSE 流式处理      │ │
 │   │ • 权限验证       │  │  • Cypher 过滤       │ │
 │   └──────────────────┘  └──────────────────────┘ │
+│   ┌──────────────────────────────────────────────┐ │
+│   │  Agent Monitor                               │ │
+│   │  • 工具调用统计  • 健康检查  • 性能指标    │ │
+│   └──────────────────────────────────────────────┘ │
 └──────────────────────┬───────────────────────────┘
                        │
 ┌──────────────────────▼───────────────────────────┐
@@ -280,6 +295,7 @@ docker compose logs -f backend
 |------|------|------|
 | API 路由 | `src/api/routes/` | RESTful 接口（Chat、Auth、Complex Tasks） |
 | Agent 核心 | `src/core/agent.py` | LangGraph ReAct Agent，工具调用与上下文管理 |
+| Agent 监控 | `src/core/agent_monitor.py` | 工具调用统计、健康检查、性能指标收集 |
 | 会话管理 | `src/core/session_manager.py` | 会话 CRUD、权限验证、检查点管理（独立模块） |
 | Sub-Agent | `src/core/sub_agent/` | 复杂任务分解、并行执行、结果合成 |
 | 流式输出 | `src/core/stream/` | SSE 流式对话、Cypher 过滤、格式化 |
@@ -452,16 +468,17 @@ EOF
 
 | 层次 | 技术 |
 |------|------|
-| Web 框架 | FastAPI 0.109.0 + Uvicorn |
-| LLM 框架 | LangChain + LangGraph（ReAct 架构） |
+| Web 框架 | FastAPI ≥0.136.0 + Uvicorn |
+| LLM 框架 | LangChain ≥1.3.0 + LangGraph ≥1.2.0（ReAct 架构） |
+| LLM 监控 | LangSmith ≥0.8.0（可选，链路追踪） |
 | LLM Provider | OpenAI / 阿里云通义千问（兼容 OpenAI API） |
-| 图数据库 | Neo4j 5.x + langchain-neo4j（GraphCypherQAChain） |
-| 文档数据库 | MongoDB（Motor 异步驱动）+ LangGraph Checkpoint |
-| 认证 | PyJWT + bcrypt |
-| 搜索 | Tavily API + DuckDuckGo |
-| 爬虫 | BeautifulSoup4 + Requests |
-| 前端 | Vanilla JS + SSE + ECharts 5.4.3（力导向图） |
-| 配置 | pydantic-settings + python-dotenv |
+| 图数据库 | Neo4j 5.x + langchain-neo4j ≥0.9.0（GraphCypherQAChain） |
+| 文档数据库 | MongoDB（Motor ≥3.7.0 异步驱动）+ LangGraph Checkpoint |
+| 认证 | PyJWT ≥2.13.0 + bcrypt ≥5.0.0 |
+| 搜索 | Tavily API + DuckDuckGo（ddgs ≥9.14.0） |
+| 爬虫 | BeautifulSoup4 ≥4.14.0 + Requests ≥2.34.0 |
+| 前端 | Vanilla JS + SSE |
+| 配置 | pydantic-settings ≥2.14.0 + python-dotenv ≥1.2.0 |
 
 ---
 
@@ -475,6 +492,7 @@ my-agent/
 │   │   └── routes/                   # 路由（chat、auth、complex_tasks）
 │   ├── core/                         # 核心业务逻辑
 │   │   ├── agent.py                  # LangGraph ReAct Agent 主体
+│   │   ├── agent_monitor.py         # Agent 监控（工具调用统计、健康检查）
 │   │   ├── session_manager.py        # 会话管理器（独立模块，降低耦合）
 │   │   ├── tool_adapter.py           # 工具适配器（BaseTool → LangChain StructuredTool）
 │   │   ├── security.py               # 安全策略（输入过滤、提示注入防护）
