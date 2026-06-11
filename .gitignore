@@ -1,5 +1,7 @@
 # 敏感信息
+.env example
 .env*
+*.env
 
 # Python
 __pycache__/
