@@ -1,5 +1,5 @@
 # 敏感信息
-.env1
+.env*
 
 # Python
 __pycache__/
