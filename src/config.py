@@ -45,6 +45,22 @@ class Settings(BaseSettings):
     TEMPERATURE: float = 0.7
 
     # ═══════════════════════════════════════
+    # 意图分类器配置（本地小模型）
+    # ═══════════════════════════════════════
+    # Ollama 兼容 OpenAI 接口，默认地址 http://localhost:11434/v1
+    INTENT_CLASSIFIER_BASE_URL: str = "http://localhost:11434/v1"
+    INTENT_CLASSIFIER_API_KEY: str = "ollama"  # Ollama 不校验 key，填任意值即可
+    INTENT_CLASSIFIER_MODEL: str = "qwen2.5:7b-instruct-q4_k_m"
+    INTENT_CLASSIFIER_TIMEOUT: int = 10  # 分类超时（秒）
+    INTENT_CLASSIFIER_ENABLED: bool = True  # False 则退回纯关键词规则
+
+    # ═══════════════════════════════════════
+    # 路由器配置（Router + Executor 架构）
+    # ═══════════════════════════════════════
+    ROUTER_CONFIDENCE_THRESHOLD: float = 0.75   # 路由置信度阈值，低于此值回退到 ROUTER_FALLBACK_ROUTE
+    ROUTER_FALLBACK_ROUTE: str = "simple"       # 低置信度回退路径（simple/complex）
+
+    # ═══════════════════════════════════════
     # MongoDB 配置
     # ═══════════════════════════════════════
     MONGODB_URL: str = "mongodb://localhost:27017"
@@ -142,7 +158,7 @@ class Settings(BaseSettings):
         case_sensitive = True
 
     # model_config = {
-    #     "env_file": str(PROJECT_ROOT / ".env"),
+    #     "env_file": str(PROJECT_ROOT / ".env1"),
     #     "env_file_encoding": "utf-8",
     #     "extra": "ignore"
     # }

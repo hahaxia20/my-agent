@@ -3,12 +3,12 @@
 # ═══════════════════════════════════════
 # 使用方式：
 #   1. 确保 MongoDB、Neo4j 容器已在运行
-#   2. 修改 .env 中的连接地址（见下方说明）
+#   2. 修改 .env1 中的连接地址（见下方说明）
 #   3. docker compose up --build -d
 #   4. 访问 http://localhost
 #
 # 连接已有的 MongoDB / Neo4j 容器：
-#   将 .env 中的 localhost 改为 host.docker.internal（Docker Desktop）
+#   将 .env1 中的 localhost 改为 host.docker.internal（Docker Desktop）
 #     MONGODB_URL=mongodb://admin:123456@host.docker.internal:27017
 #     NEO4J_URI=bolt://host.docker.internal:7687
 #

@@ -12,6 +12,7 @@ from src.api.middleware import setup_cors
 from src.api.routes import chat_router
 from src.api.routes import auth_router
 from src.api.routes import complex_tasks_router
+from src.api.routes import skills_router
 from src.core.logging.config import setup_logging
 
 # ═══════════════════════════════════════
@@ -40,7 +41,7 @@ async def lifespan(app: FastAPI):
 
     # 验证配置
     if not validate_config():
-        raise RuntimeError("配置验证失败，请检查 .env 文件")
+        raise RuntimeError("配置验证失败，请检查 .env1 文件")
 
     # 打印配置摘要
     print_config_summary()
@@ -95,6 +96,7 @@ def create_app() -> FastAPI:
     app.include_router(chat_router)
     app.include_router(auth_router)
     app.include_router(complex_tasks_router)
+    app.include_router(skills_router)
 
 
     # 静态文件目录（相对于项目根目录）

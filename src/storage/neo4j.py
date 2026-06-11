@@ -6,9 +6,7 @@ Neo4j 图数据库管理器
 
 from neo4j import GraphDatabase
 import logging
-import io
-import re
-import contextlib
+
 from src.config import get_settings_safe
 
 logger = logging.getLogger(__name__)
@@ -90,7 +88,7 @@ class Neo4jManager:
     _QA_PROMPT_TEMPLATE = """你是一个专业的产业链分析师。根据图谱查询结果，结合你的领域知识，用结构化 Markdown 格式回答用户的问题。
 
 ## 输出格式要求
-1. 禁止输出 Cypher 查询语句、MATCH/RETURN/WHERE/LIMIT 等数据库关键词
+1. **严禁输出 Cypher**：禁止出现 MATCH、RETURN、WHERE、CONTAINS、LIMIT、ORDER BY 等任何数据库关键词或查询语句，违者视为失败
 2. 禁止输出查询过程、调试信息、"根据查询结果"等元信息
 3. 使用 Markdown 格式：用 `##` 标题、`🔹` emoji、`**加粗**` 和缩进列表组织内容
 4. 图谱中的环节名称是骨架，你必须用领域知识为每个环节补充 1-2 句简要说明（技术路线、典型产品等），但不要编造不存在的环节
@@ -175,28 +173,8 @@ class Neo4jManager:
 
 ## 回答"""
 
-    # ── 输出清洗规则 ──────────────────────────────────────────
-    # 匹配完整 Cypher 语句（MATCH...RETURN...）
-    _CYPHER_PATTERN = re.compile(
-        r"(?:(?:MATCH|CALL|WITH|UNWIND)\b[\s\S]*?RETURN\b[^\u4e00-\u9fff\n]*)",
-        re.IGNORECASE,
-    )
-    # 匹配整行包含 RETURN + Cypher 变量（如 "氢能' RETURN s.name, s.position..."）
-    # 捕获整行，确保前后残留也被清除
-    _RETURN_LINE = re.compile(
-        r"^[^\n]*\bRETURN\b[ \t]+[a-zA-Z_][a-zA-Z0-9_.,\[ \t]]*(?:ORDER BY[^\n]*)?(?:LIMIT[ \t]+\d+)?[ \t]*$",
-        re.IGNORECASE | re.MULTILINE,
-    )
-    # 匹配孤立的 Cypher 片段（只有 RETURN 没有 MATCH，不跨行、不匹配中文）
-    _RETURN_FRAGMENT = re.compile(
-        r"RETURN[ \t]+[a-zA-Z_][a-zA-Z0-9_.,\[ \t]]*(?:ORDER BY[a-zA-Z0-9_.,\[ \t]+)?(?:LIMIT[ \t]+\d+)?",
-        re.IGNORECASE,
-    )
-    _EMPTY_ANSWERS = {
-        "我不知道答案。", "我不知道答案",
-        "i don't know", "i don't know the answer", "i don't know the answer.",
-    }
-    _MEANINGLESS_PREFIXES = ("我不知道答案", "我无法回答", "I don't know")
+
+    # ── 输出清洗规则（已废弃，smart_query 手动两步后不再需要） ──
 
     # ══════════════════════════════════════════════════════════
     # 连接管理
@@ -394,88 +372,74 @@ class Neo4jManager:
 
     def smart_query(self, question: str) -> str:
         """
-        LLM 自动生成 Cypher 并执行，返回纯自然语言答案。
-        verbose=False + redirect_stdout + _clean_answer 三重保障输出纯净。
+        手动两步：① LLM 生成 Cypher 并执行 ② 只用查询结果调 QA LLM
+        QA LLM 完全看不到 Cypher，从根源杜绝泄漏，无需正则清洗。
         """
-        from langchain_neo4j import Neo4jGraph, GraphCypherQAChain
+        from langchain_neo4j import Neo4jGraph
         from langchain_core.prompts import PromptTemplate
         from langchain_openai import ChatOpenAI
         from pydantic import SecretStr
 
         try:
             settings = get_settings_safe()
+            llm = ChatOpenAI(
+                model=settings.MODEL_NAME,
+                api_key=SecretStr(settings.OPENAI_API_KEY),
+                base_url=settings.API_BASE_URL,
+                temperature=0,
+            )
             graph = Neo4jGraph(
                 url=self.uri, username=self.username,
                 password=self.password, database=self.database,
             )
-            chain = GraphCypherQAChain.from_llm(
-                llm=ChatOpenAI(
-                    model=settings.MODEL_NAME,
-                    api_key=SecretStr(settings.OPENAI_API_KEY),
-                    base_url=settings.API_BASE_URL,
-                    temperature=0,
-                ),
-                graph=graph,
-                cypher_prompt=PromptTemplate(
-                    template=self._CYPHER_PROMPT_TEMPLATE,
-                    input_variables=["schema", "question"],
-                ),
-                qa_prompt=PromptTemplate(
-                    template=self._QA_PROMPT_TEMPLATE,
-                    input_variables=["context", "question"],
-                ),
-                verbose=False,
-                validate_cypher=True,
-                allow_dangerous_requests=True,
-                return_intermediate_steps=True,
-                top_k=100,
+
+            # ── Step 1: 生成 Cypher ──
+            cypher_prompt = PromptTemplate(
+                template=self._CYPHER_PROMPT_TEMPLATE,
+                input_variables=["schema", "question"],
             )
+            cypher_chain = cypher_prompt | llm
+            cypher_response = cypher_chain.invoke({
+                "schema": graph.get_schema,
+                "question": question,
+            })
+            cypher_query = cypher_response.content.strip()
+            # 剥离可能的 markdown 代码块包裹
+            if cypher_query.startswith("```"):
+                lines = cypher_query.split("\n")
+                cypher_query = "\n".join(
+                    line for line in lines
+                    if not line.strip().startswith("```")
+                ).strip()
+            logger.info(f"🔍 [smart_query Cypher]: {cypher_query}")
 
-            captured = io.StringIO()
-            with contextlib.redirect_stdout(captured):
-                response = chain.invoke({"query": question})
+            # ── Step 2: 执行 Cypher ──
+            with self.driver.session(database=self.database) as session:
+                result = session.run(cypher_query)
+                records = [record.data() for record in result]
+            logger.info(f"📊 [smart_query 返回行数]: {len(records)}")
 
-            # 记录中间步骤（生成的 Cypher 和实际返回行数）用于调试
-            steps = response.get("intermediate_steps", [])
-            for step in steps:
-                if "query" in step:
-                    logger.info(f"🔍 [smart_query Cypher]: {step['query']}")
-                if "context" in step:
-                    ctx = step["context"]
-                    row_count = len(ctx) if isinstance(ctx, list) else "N/A"
-                    logger.info(f"📊 [smart_query 返回行数]: {row_count}")
+            if not records:
+                return "图谱中暂未找到与该问题匹配的数据，请尝试换一种描述方式。"
 
-            if captured.getvalue().strip():
-                logger.debug(f"[smart_query debug]\n{captured.getvalue().strip()}")
-
-            raw = response["result"] if isinstance(response, dict) else str(response)
-            answer = self._clean_answer(raw)
+            # ── Step 3: 只用查询结果调 QA LLM（不传 Cypher） ──
+            context_str = str(records)
+            qa_prompt = PromptTemplate(
+                template=self._QA_PROMPT_TEMPLATE,
+                input_variables=["context", "question"],
+            )
+            qa_chain = qa_prompt | llm
+            qa_response = qa_chain.invoke({
+                "context": context_str,
+                "question": question,
+            })
+            answer = qa_response.content.strip()
             logger.info(f"✅ [smart_query] 问题: {question[:50]}... 答案长度: {len(answer)}")
             return answer
 
         except Exception as e:
             logger.error(f"❌ [smart_query] 失败: {e}", exc_info=True)
             return f"图谱智能查询失败：{str(e)}"
-
-    def _clean_answer(self, raw: str) -> str:
-        """剥离泄漏的 Cypher，处理空结果降级"""
-        # 第一步：清理完整 Cypher 语句（MATCH...RETURN...）
-        cleaned = self._CYPHER_PATTERN.sub("", raw).strip()
-        # 第二步：清理整行含 RETURN 的 Cypher 片段（如 "氢能' RETURN s.name..."）
-        cleaned = self._RETURN_LINE.sub("", cleaned).strip()
-        # 第三步：清理孤立的 RETURN 片段（如 RETURN s.name, s.position...）
-        cleaned = self._RETURN_FRAGMENT.sub("", cleaned).strip()
-        # 第四步：清理残留的短片段（如 "氢能'"、"核能'"——Cypher字符串引号残留）
-        cleaned = re.sub(r"^[\u4e00-\u9fff]{1,10}'?$", "", cleaned, flags=re.MULTILINE).strip()
-        # 第五步：清理多余空行
-        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
-        if (
-            not cleaned
-            or cleaned.rstrip("。.") in self._EMPTY_ANSWERS
-            or any(cleaned.startswith(p) for p in self._MEANINGLESS_PREFIXES)
-        ):
-            return "图谱中暂未找到与该问题匹配的数据。请尝试换一种描述方式，例如使用具体的产业链名称或实体名称进行查询。"
-        return cleaned
 
 
 # ══════════════════════════════════════════════════════════════

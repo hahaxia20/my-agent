@@ -12,7 +12,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pytest
 from src.core.security import InputSecurityFilter, OutputSecurityFilter
 from src.core.stream.manager import StreamCypherFilter
-from src.core.helpers.intent_classifier import classify_intent
 
 
 # ═══════════════════════════════════════════════════════════
@@ -167,30 +166,3 @@ class TestStreamCypherFilter:
         f2 = StreamCypherFilter()
         out = f2.process("这是一段很长的自然语言文本超过十个字")
         assert len(out) > 0
-
-
-# ═══════════════════════════════════════════════════════════
-# _classify_intent 测试
-# ═══════════════════════════════════════════════════════════
-
-class TestClassifyIntent:
-    """意图分类器"""
-
-    @pytest.mark.parametrize("simple_query", [
-        "你好",
-        "今天天气怎么样",
-        "什么是 Python",
-        "帮我计算一下 123 + 456",
-    ])
-    def test_simple_queries(self, simple_query):
-        assert classify_intent(simple_query) == "simple"
-
-    @pytest.mark.parametrize("complex_query", [
-        "对比新能源汽车和锂电池产业链",
-        "分析半导体产业链的上游和下游",
-        "深度分析人工智能行业的发展趋势",
-        "哪些企业是光伏产业链的龙头",
-        "多个产业链的综合比较分析",
-    ])
-    def test_complex_queries(self, complex_query):
-        assert classify_intent(complex_query) == "complex"

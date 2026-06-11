@@ -126,8 +126,10 @@ async function loadSessions() {
             }
         );
 
-        // 如果后端返回 401，跳转登录页
+        // 如果后端返回 401，清除 token 并跳转登录页
         if (response.status === 401) {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('currentUser');
             window.location.href = 'login.html';
             return;
         }
@@ -196,8 +198,10 @@ async function selectSession(sessionId) {
                 }
             });
 
-        // 如果后端返回 401，跳转登录页
+        // 如果后端返回 401，清除 token 并跳转登录页
         if (response.status === 401) {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('currentUser');
             window.location.href = 'login.html';
             return;
         }
@@ -237,6 +241,8 @@ async function deleteSession(sessionId) {
         });
 
         if (response.status === 401) {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('currentUser');
             window.location.href = 'login.html';
             return;
         }

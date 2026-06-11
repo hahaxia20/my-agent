@@ -2,13 +2,14 @@
 流式对话处理器
 
 从 agent.py 中独立抽取的流式逻辑，包括：
-- 简单查询的 ReAct 流式输出
-- 复杂任务的 SSE 事件流式推送
+- Router + Executor 架构的路由与执行
+- 复杂任务的 SSE 事件流式推送（保留旧接口兼容）
 - 流式错误格式化
 
 设计原则：
   StreamHandler 持有 MyAgent 实例，复用其核心组件（agent、db、config 等），
   agent.py 保持精简，只负责调度。
+  路由决策由 router 模块负责，执行由各 Executor 负责。
 """
 
 from __future__ import annotations
@@ -19,16 +20,13 @@ import logging
 import time
 from typing import TYPE_CHECKING, AsyncIterator, Dict, Any, Optional
 
-from src.core.helpers.intent_classifier import classify_intent
+from src.core.router import route_query, RouteType
+from src.core.executors import get_executor, ExecutorContext
 from src.core.helpers.chat_helpers import check_input_security
 
 from langchain_core.runnables import RunnableConfig
 
 from src.core.logging.decorator import log_method_call
-from src.core.stream.manager import (
-    StreamBuffer, StreamFormatter, StreamMetrics,
-    StreamChunk, StreamEventType, StreamCypherFilter
-)
 from src.core.tool_adapter import safe_truncate as _safe_truncate
 
 if TYPE_CHECKING:
@@ -41,8 +39,9 @@ class StreamHandler:
     """流式对话处理器
 
     职责：
-    - 处理简单查询的流式输出（ReAct Agent astream_events）
-    - 处理复杂任务的 SSE 事件流（Sub-Agent 进度推送）
+    - 通过 Router 做意图路由（skill_direct / simple / complex / graph_only）
+    - 通过 Executor 执行具体任务并流式返回响应
+    - 保留 stream_complex_task 旧接口供向后兼容
     - 格式化流式错误信息
     """
 
@@ -135,7 +134,7 @@ class StreamHandler:
         await task
 
     # ─────────────────────────────────────────────────────
-    # 简单查询流式输出（ReAct Agent）
+    # 主入口：Router + Executor 流式对话
     # ─────────────────────────────────────────────────────
 
     @log_method_call(prefix="[Agent-流式] ", log_duration=True)
@@ -148,13 +147,13 @@ class StreamHandler:
         buffer_size: int = 5,
         flush_interval: float = 0.05
     ) -> AsyncIterator[str]:
-        """生产级流式对话
+        """生产级流式对话（Router + Executor 架构）
 
         流程：
         1. 安全检查
-        2. 意图分类：complex → stream_complex_task；simple → ReAct astream_events
-        3. 逐 chunk 输出，过滤 Cypher，记录工具调用
-        4. 保存消息到数据库
+        2. 路由决策（route_query）：根据查询 + 历史 + Skills 决定路由
+        3. 构建 ExecutorContext，通过 get_executor() 获取执行器
+        4. 逐 chunk 输出（各 Executor 内部处理消息保存等逻辑）
         """
         agent = self._agent
 
@@ -170,216 +169,48 @@ class StreamHandler:
         request_start = time.time()
         session_id = await agent._ensure_session(session_id, user_id, user_query[:30])
 
-        # 🔍 意图分类：自动路由到简单/复杂路径
-        intent = classify_intent(user_query)
-        if intent == "complex":
-            logger.info("🚀 [路由] 复杂任务 → Sub-Agent 编排器")
+        # 🔍 意图路由：使用小模型做结构化路由决策
+        # 获取对话历史摘要供路由决策
+        history_summary = await agent._build_history_context(session_id)
+        # 获取已加载 Skills 信息
+        skills_info = agent.skill_registry.get_skills_metadata_list()
+        # 路由决策
+        route_decision = await route_query(
+            query=user_query,
+            context_summary=history_summary,
+            loaded_skills=skills_info
+        )
+        logger.info(
+            f"🔀 [路由决策] route={route_decision.route}"
+            f"{'(' + str(route_decision.skill_name) + ')' if route_decision.skill_name else ''} "
+            f"confidence={route_decision.confidence:.2f} "
+            f"| {route_decision.reason}"
+        )
+
+        # ── 构建 Executor 上下文 ──
+        exec_ctx = ExecutorContext(
+            agent=agent,
+            session_id=session_id,
+            user_id=user_id,
+            route_decision=route_decision,
+            enable_metrics=enable_metrics,
+            buffer_size=buffer_size,
+            flush_interval=flush_interval,
+        )
+
+        # ── 复杂任务需要特殊的 SSE 格式 ──
+        route_value = route_decision.route
+        if isinstance(route_value, str):
+            try:
+                route_value = RouteType(route_value)
+            except ValueError:
+                route_value = RouteType.SIMPLE
+
+        if route_value == RouteType.COMPLEX:
+            # ComplexExecutor 输出 SSE JSON 事件，需要 session_id 前缀
             yield f"__SESSION_ID__:{session_id}\n"
-            yield json.dumps({"type": "routing", "data": {"mode": "complex"}}) + "\n"
-            async for chunk in self.stream_complex_task(user_query, session_id, user_id):
-                yield chunk
-            return
 
-        # ── 简单查询 → ReAct Agent 直接处理 ──────────────
-        logger.info("💬 [路由] 简单查询 → ReAct Agent")
-        metrics: Optional[StreamMetrics] = None
-
-        try:
-            metrics = StreamMetrics() if enable_metrics else None
-            if metrics:
-                metrics.start()
-
-            buffer = StreamBuffer(max_size=buffer_size, flush_interval=flush_interval)
-
-            config = RunnableConfig(
-                configurable={"thread_id": session_id},
-                metadata={"user_id": user_id},
-                tags=["production", "stream"],
-                recursion_limit=agent.config.recursion_limit
-            )
-
-            full_response = ""
-            total_tokens: Dict[str, int] = {"prompt": 0, "completion": 0, "total": 0}
-            current_tool: Optional[str] = None
-            tool_start_time: Optional[float] = None
-            cypher_filter = StreamCypherFilter()
-
-            async with agent._semaphore:
-                request_start = time.time()
-                logger.info(f"🚀 开始流式处理: {session_id}")
-
-                used_tools: list = []
-                used_skills: list = []
-                llm_start = time.time()
-                llm_first_token_logged = False
-                logger.info("️ [性能] 开始调用 LLM...")
-
-                input_messages = await agent.conversation_context.load_context(
-                    session_id=session_id,
-                    current_message=user_query
-                )
-                stats = agent.conversation_context.get_context_stats(input_messages)
-                logger.info(f"📊 流式对话上下文统计: {stats}")
-
-                async for event in agent.agent.astream_events(
-                    {"messages": input_messages},
-                    config=config,
-                    version="v2"
-                ):
-                    event_type = event["event"]
-
-                    # ── LLM 流式输出 ──
-                    if event_type == "on_chat_model_stream":
-                        if not llm_first_token_logged:
-                            llm_first_token_logged = True
-                            logger.info(f"⏱️ [性能] LLM 首字耗时: {time.time() - llm_start:.2f}s")
-
-                        chunk = event["data"]["chunk"]
-                        usage_metadata = getattr(chunk, 'usage_metadata', None)
-                        if usage_metadata:
-                            total_tokens["prompt"] = usage_metadata.get("input_tokens", 0)
-                            total_tokens["completion"] = usage_metadata.get("output_tokens", 0)
-                            total_tokens["total"] = usage_metadata.get("total_tokens", 0)
-
-                        is_empty = not chunk.content or not chunk.content.strip()
-                        if metrics:
-                            metrics.record_chunk(chunk.content or "", is_empty)
-
-                        if chunk.content and chunk.content.strip():
-                            filtered = cypher_filter.process(chunk.content)
-                            if not filtered or not filtered.strip():
-                                continue
-                            buffered = buffer.add(
-                                StreamChunk(type=StreamEventType.TEXT, content=filtered)
-                            )
-                            if buffered:
-                                full_response += buffered
-                                yield buffered
-
-                    # ── 工具调用开始 ──
-                    elif event_type == "on_tool_start":
-                        tool_name = event.get('name', 'unknown')
-                        tool_start_time = time.time()
-                        current_tool = tool_name
-
-                        if tool_name == "load_skill":
-                            tool_input = event.get('data', {}).get('input', {})
-                            skill_name = (
-                                tool_input.get('skill_name', '')
-                                if isinstance(tool_input, dict) else ''
-                            )
-                            if skill_name and skill_name not in used_skills:
-                                used_skills.append(skill_name)
-                                logger.info(f"🎯 [使用技能] {skill_name}")
-                        elif tool_name not in used_tools:
-                            used_tools.append(tool_name)
-                            logger.info(f"🔧 [使用工具] {tool_name}")
-
-                        if metrics:
-                            metrics.record_tool_call(tool_name)
-
-                        logger.info(f"🔧 [工具调用开始] {tool_name}")
-                        logger.debug(f"   工具参数: {event.get('data', {}).get('input', {})}")
-
-                        buffered = buffer.flush()
-                        if buffered:
-                            full_response += buffered
-                            yield buffered
-                        yield f"\n🔧 正在调用工具: **{tool_name}**...\n"
-
-                    # ── 工具调用结束 ──
-                    elif event_type == "on_tool_end":
-                        elapsed = time.time() - (tool_start_time or time.time())
-                        if current_tool:
-                            logger.info(f"✅ [工具调用完成] {current_tool} - 耗时: {elapsed:.2f}s")
-                            logger.debug(
-                                f"   工具返回: "
-                                f"{_safe_truncate(str(event.get('data', {}).get('output', '')), 300)}"
-                            )
-                            agent._record_tool_call(current_tool, elapsed, success=True)
-                            yield f"\n✅ 工具 **{current_tool}** 调用完成 ({elapsed:.1f}s)\n"
-                            current_tool = None
-                            tool_start_time = None
-
-                    # ── 工具错误 ──
-                    elif event_type == "on_tool_error":
-                        error = event.get('data', {}).get('error', '未知错误')
-                        tool_name = event.get('name', 'unknown')
-                        elapsed = time.time() - (tool_start_time or time.time())
-                        logger.error(
-                            f"❌ [工具调用失败] {tool_name} - "
-                            f"耗时: {elapsed:.2f}s - 错误: {str(error)}"
-                        )
-                        agent._record_tool_call(tool_name, elapsed, success=False)
-                        yield f"\n❌ 工具 **{tool_name}** 调用失败\n"
-                        current_tool = None
-
-                # 刷新 Cypher 过滤器剩余内容
-                cypher_remaining = cypher_filter.flush()
-                if cypher_remaining and cypher_remaining.strip():
-                    buffered = buffer.add(
-                        StreamChunk(type=StreamEventType.TEXT, content=cypher_remaining)
-                    )
-                    if buffered:
-                        full_response += buffered
-                        yield buffered
-
-                # 刷新剩余缓冲区
-                remaining = buffer.flush()
-                if remaining:
-                    full_response += remaining
-                    yield remaining
-
-                total_elapsed = time.time() - request_start
-                logger.info(
-                    f"✅ [流式对话完成] session={session_id} - "
-                    f"总耗时: {total_elapsed:.2f}s - 回复长度: {len(full_response)} 字符"
-                )
-
-                if used_tools or used_skills:
-                    logger.info(
-                        f"📊 [本次调用] 工具: {used_tools or '无'}, 技能: {used_skills or '无'}"
-                    )
-
-                if metrics and agent.config.debug:
-                    metrics.finish()
-                    stats_data = metrics.get_stats()
-                    logger.info(f"📊 [流式统计] 会话:{session_id} - {stats_data}")
-                    if stats_data.get('tools_called'):
-                        yield f"\n\n📊 调用的工具: {', '.join(stats_data['tools_called'])}"
-                    if stats_data.get('skills_called'):
-                        yield f"\n🎯 调用的技能: {', '.join(stats_data['skills_called'])}"
-
-                if not full_response:
-                    error_msg = "抱歉，我没有收到有效响应。请稍后重试。"
-                    full_response = error_msg
-                    yield error_msg
-
-            # 保存到数据库
-            await agent.db.add_message(session_id, "user", user_query)
-            await agent.db.add_message(session_id, "assistant", full_response)
-
-            tools_called = metrics.get_tool_names() if metrics else []
-            skills_called = metrics.get_skill_names() if metrics else []
-            metadata = StreamFormatter.format_metadata(
-                session_id=session_id,
-                chunk_count=metrics.chunk_count if metrics else 0,
-                duration=metrics.duration if metrics else 0,
-                tools_called=tools_called,
-                skills_called=skills_called
-            )
-            yield f"\n<!-- {metadata} -->"
-
-        except asyncio.CancelledError:
-            logger.info(f"🛑 [流式取消] 会话被取消: {session_id}")
-            yield "\n<!-- cancelled -->"
-
-        except asyncio.TimeoutError:
-            logger.error(f"⏰ [流式超时] {session_id}")
-            yield "\n抱歉，响应超时，请稍后重试。"
-
-        except Exception as e:
-            logger.error(f"💥 [流式错误] {e}", exc_info=True)
-            if metrics:
-                metrics.record_error()
-            yield self.format_stream_error(e)
+        # ── 通过 Executor 工厂获取执行器并执行 ──
+        executor = get_executor(route_decision)
+        async for chunk in executor.execute(user_query, exec_ctx):
+            yield chunk

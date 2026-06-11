@@ -37,7 +37,7 @@ class TavilyProvider(SearchProvider):
         settings = get_settings_safe()
         if not settings.TAVILY_API_KEY:
             raise ToolExecutionError(
-                "Tavily API key 未配置，请在 .env 中设置 TAVILY_API_KEY，"
+                "Tavily API key 未配置，请在 .env1 中设置 TAVILY_API_KEY，"
                 "或将 SEARCH_PROVIDER 改为 duckduckgo（免费）"
             )
 

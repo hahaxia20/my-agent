@@ -54,6 +54,8 @@ async function handleUnifiedStream(message, contentDiv, token) {
     });
 
     if (response.status === 401) {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('currentUser');
         window.location.href = 'login.html';
         return;
     }

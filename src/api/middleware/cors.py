@@ -18,10 +18,10 @@ def setup_cors(app: FastAPI):
     # 生产环境安全保护：禁止使用通配符
     if settings.CORS_ORIGINS == ["*"] and not settings.DEBUG:
         logger.error(
-            "❌ 生产环境禁止使用通配符 CORS [*]，请在 .env 中配置 CORS_ORIGINS"
+            "❌ 生产环境禁止使用通配符 CORS [*]，请在 .env1 中配置 CORS_ORIGINS"
         )
         raise ValueError(
-            "生产环境 CORS_ORIGINS 不能为 ['*']，请在 .env 中明确指定允许的域名，"
+            "生产环境 CORS_ORIGINS 不能为 ['*']，请在 .env1 中明确指定允许的域名，"
             "例如：CORS_ORIGINS=['https://yourdomain.com']"
         )
 

@@ -36,9 +36,20 @@
 - **结果合成**：智能整合多个子任务结果
 - **流式进度**：实时展示子任务执行进度
 
-### 🎯 插件化 Skills 系统
+### 🎯 智能意图路由（Router + Executor 架构）
+- **本地小模型路由**：基于 Ollama（qwen2.5:7b-instruct-q4_k_m）做结构化路由决策，输出 JSON RouteDecision
+- **四路由路径**：
+  - `skill_direct` → SkillExecutor（技能直达，如"分析网站"→ web-content-analyzer）
+  - `simple` → SimpleExecutor（ReAct Agent 流式对话）
+  - `complex` → ComplexExecutor（Sub-Agent 编排，多步协作）
+  - `graph_only` → GraphExecutor（产业链图谱直达查询）
+- **置信度回退**：置信度 < 0.75 时自动降级到 simple 路径
+- **关键词兜底**：LLM 超时/失败时退回规则引擎，保证系统可用性
+
+### 🧩 插件化 Skills 系统
 - **配置化定义**：基于 Markdown（SKILL.md）文件配置
-- **自动加载**：热插拔，无需重启服务
+- **热重载**：支持运行时重新扫描目录，无需重启服务
+- **状态管理**：运行时启用/禁用 Skill，REST API 管理
 - **中间件注入**：通过 SkillMiddleware 运行时注入提示词
 
 ### 🛠️ 内置工具集
@@ -69,6 +80,7 @@
 - MongoDB 4.4+
 - Neo4j 5.x（产业链图谱功能）
 - OpenAI API Key（或兼容的 LLM API，如阿里云通义千问）
+- Ollama（本地意图分类小模型，可选）
 - Docker + Docker Desktop（生产部署时需要）
 
 ### 安装步骤
@@ -113,6 +125,11 @@ TAVILY_API_KEY=your-tavily-key
 
 # JWT 密钥
 JWT_SECRET_KEY=your-secret-key
+
+# 意图分类器（本地 Ollama 小模型，可选）
+INTENT_CLASSIFIER_ENABLED=true
+INTENT_CLASSIFIER_BASE_URL=http://localhost:11434/v1
+INTENT_CLASSIFIER_MODEL=qwen2.5:7b-instruct-q4_k_m
 
 # LangSmith 监控（可选）
 LANGSMITH_ENABLED=false
@@ -243,28 +260,38 @@ docker compose logs -f backend
 ┌──────────────────────▼───────────────────────────┐
 │                FastAPI Server                    │
 │   ┌──────────┐  ┌──────────┐  ┌───────────────┐ │
-│   │ Auth API │  │ Chat API │  │ Complex Tasks │ │
+│   │ Auth API │  │ Chat API │  │ Skills API    │ │
 │   └──────────┘  └──────────┘  └───────────────┘ │
 └──────────────────────┬───────────────────────────┘
                        │
 ┌──────────────────────▼───────────────────────────┐
-│              Core Agent Layer                    │
+│              StreamHandler (入口)                │
+│   安全检查 → route_query() → get_executor()      │
+└──────────────────────┬───────────────────────────┘
+                       │ RouteDecision
+┌──────────────────────▼───────────────────────────┐
+│              Router + Executor Layer             │
 │   ┌──────────────────┐  ┌──────────────────────┐ │
-│   │  Single Agent    │  │  Sub-Agent           │ │
-│   │  (ReAct + Tools) │  │  Orchestrator        │ │
-│   │  • Context Mgmt  │  │  • Decomposer        │ │
-│   │  • Tool Calling  │  │  • Worker Pool       │ │
-│   └──────────────────┘  │  • Synthesizer       │ │
+│   │  IntentRouter    │  │  Executor 工厂       │ │
+│   │  (Ollama 小模型) │  │  ┌─────────────────┐ │ │
+│   │  结构化路由 JSON  │  │  │ SimpleExecutor  │ │ │
+│   └──────────────────┘  │  │ (ReAct 流式)    │ │ │
+│                         │  ├─────────────────┤ │ │
+│                         │  │ SkillExecutor   │ │ │
+│                         │  │ (技能直达)      │ │ │
+│                         │  ├─────────────────┤ │ │
+│                         │  │ ComplexExecutor │ │ │
+│                         │  │ (Sub-Agent编排) │ │ │
+│                         │  ├─────────────────┤ │ │
+│                         │  │ GraphExecutor   │ │ │
+│                         │  │ (图谱直达)      │ │ │
+│                         │  └─────────────────┘ │ │
 │                         └──────────────────────┘ │
 │   ┌──────────────────┐  ┌──────────────────────┐ │
-│   │ Session Manager  │  │  Stream Handler      │ │
-│   │ • 会话 CRUD      │  │  • SSE 流式处理      │ │
-│   │ • 权限验证       │  │  • Cypher 过滤       │ │
+│   │ Session Manager  │  │  Agent Monitor       │ │
+│   │ • 会话 CRUD      │  │  • 工具调用统计      │ │
+│   │ • 权限验证       │  │  • 健康检查          │ │
 │   └──────────────────┘  └──────────────────────┘ │
-│   ┌──────────────────────────────────────────────┐ │
-│   │  Agent Monitor                               │ │
-│   │  • 工具调用统计  • 健康检查  • 性能指标    │ │
-│   └──────────────────────────────────────────────┘ │
 └──────────────────────┬───────────────────────────┘
                        │
 ┌──────────────────────▼───────────────────────────┐
@@ -294,11 +321,13 @@ docker compose logs -f backend
 | 模块 | 路径 | 职责 |
 |------|------|------|
 | API 路由 | `src/api/routes/` | RESTful 接口（Chat、Auth、Complex Tasks） |
-| Agent 核心 | `src/core/agent.py` | LangGraph ReAct Agent，工具调用与上下文管理 |
+| Agent 核心 | `src/core/agent.py` | 单例容器，组件生命周期管理，LLM/工具/检查点初始化 |
 | Agent 监控 | `src/core/agent_monitor.py` | 工具调用统计、健康检查、性能指标收集 |
+| 意图路由器 | `src/core/router/` | 小模型结构化路由（skill_direct/simple/complex/graph_only） |
+| 执行器 | `src/core/executors/` | 四路由执行器（Simple/Skill/Complex/Graph）+ 工厂函数 |
 | 会话管理 | `src/core/session_manager.py` | 会话 CRUD、权限验证、检查点管理（独立模块） |
 | Sub-Agent | `src/core/sub_agent/` | 复杂任务分解、并行执行、结果合成 |
-| 流式输出 | `src/core/stream/` | SSE 流式对话、Cypher 过滤、格式化 |
+| 流式输出 | `src/core/stream/` | StreamHandler 入口，路由分发，SSE 推送 |
 | 上下文管理 | `src/core/context/` | 对话历史压缩、重要性筛选、系统提示词注入 |
 | 系统提示词 | `src/core/prompt/` | 多模型模板管理（default / qwen / gpt-4） |
 | 工具集 | `src/tools/` | Smart Graph Query、搜索、爬虫、计算器等 |
@@ -368,6 +397,15 @@ GET    /api/v1/sessions/{id}     # 会话详情
 DELETE /api/v1/sessions/{id}     # 删除会话
 ```
 
+### Skill 管理
+
+```http
+GET    /api/skills               # 列出所有 Skill（含启用状态）
+GET    /api/skills/{name}        # Skill 详情
+PATCH  /api/skills/{name}        # 修改启用状态 {"enabled": true/false}
+POST   /api/skills/reload        # 热重载所有 Skill（重新扫描目录）
+```
+
 完整 API 文档：http://localhost:8001/docs
 
 ---
@@ -404,18 +442,16 @@ python scripts/import_industry_chains.py
 
 ### 语义查询原理
 
-`SmartGraphQueryTool` 基于 **GraphCypherQAChain** 实现语义查询，流程如下：
+`SmartGraphQueryTool` 采用**手动两步**实现语义查询，QA LLM 完全看不到 Cypher，从根源杜绝泄漏：
 
 ```
 用户自然语言问题
       ↓
-LLM 理解意图 + 图谱 Schema
+Step 1: LLM 理解意图 + 图谱 Schema → 生成 Cypher 查询
       ↓
-自动生成 Cypher 查询
+Step 2: 执行 Cypher，获取结构化结果
       ↓
-执行查询获取结果
-      ↓
-LLM 转写为纯净自然语言答案
+Step 3: 仅将查询结果（不含 Cypher）传给 QA LLM → 生成纯净自然语言答案
 ```
 
 无需预定义查询模板，支持模糊匹配、跨链分析、统计类问题。
@@ -472,7 +508,8 @@ EOF
 | LLM 框架 | LangChain ≥1.3.0 + LangGraph ≥1.2.0（ReAct 架构） |
 | LLM 监控 | LangSmith ≥0.8.0（可选，链路追踪） |
 | LLM Provider | OpenAI / 阿里云通义千问（兼容 OpenAI API） |
-| 图数据库 | Neo4j 5.x + langchain-neo4j ≥0.9.0（GraphCypherQAChain） |
+| 意图分类 | Ollama（本地 qwen2.5:7b-instruct-q4_k_m 小模型，语义路由） |
+| 图数据库 | Neo4j 5.x + langchain-neo4j ≥0.9.0（手动两步语义查询） |
 | 文档数据库 | MongoDB（Motor ≥3.7.0 异步驱动）+ LangGraph Checkpoint |
 | 认证 | PyJWT ≥2.13.0 + bcrypt ≥5.0.0 |
 | 搜索 | Tavily API + DuckDuckGo（ddgs ≥9.14.0） |
@@ -489,9 +526,9 @@ my-agent/
 ├── src/
 │   ├── api/                          # API 层
 │   │   ├── middleware/               # 中间件（Auth、CORS）
-│   │   └── routes/                   # 路由（chat、auth、complex_tasks）
+│   │   └── routes/                   # 路由（chat、auth、complex_tasks、skills）
 │   ├── core/                         # 核心业务逻辑
-│   │   ├── agent.py                  # LangGraph ReAct Agent 主体
+│   │   ├── agent.py                  # 单例容器，组件生命周期管理
 │   │   ├── agent_monitor.py         # Agent 监控（工具调用统计、健康检查）
 │   │   ├── session_manager.py        # 会话管理器（独立模块，降低耦合）
 │   │   ├── tool_adapter.py           # 工具适配器（BaseTool → LangChain StructuredTool）
@@ -499,8 +536,17 @@ my-agent/
 │   │   ├── context/                  # 上下文管理
 │   │   │   ├── context.py            # 系统提示词上下文管理器
 │   │   │   └── conversation.py       # 对话历史上下文管理器
+│   │   ├── router/                   # 意图路由器
+│   │   │   ├── route_types.py        # RouteType 枚举 + RouteDecision 模型
+│   │   │   └── intent_router.py      # 小模型结构化路由（Ollama + 关键词兜底）
+│   │   ├── executors/                # 执行器（Router + Executor 架构）
+│   │   │   ├── base.py               # BaseExecutor 抽象类 + ExecutorContext
+│   │   │   ├── simple_executor.py    # ReAct Agent 流式对话
+│   │   │   ├── skill_executor.py     # Skill 技能直达
+│   │   │   ├── complex_executor.py   # Sub-Agent 编排
+│   │   │   └── graph_executor.py     # 产业链图谱直达查询
 │   │   ├── stream/                   # 流式输出
-│   │   │   ├── handler.py            # 流式对话处理器（SSE + Cypher 过滤）
+│   │   │   ├── handler.py            # StreamHandler 入口（路由分发 + SSE）
 │   │   │   └── manager.py            # 流式格式化与 Cypher 检测
 │   │   ├── sub_agent/                # Sub-Agent 编排
 │   │   │   ├── decomposer.py         # 任务分解器
@@ -513,8 +559,7 @@ my-agent/
 │   │   │   ├── system_prompts.py     # 提示词加载器
 │   │   │   └── system_prompts_v1.0.json  # 提示词模板
 │   │   ├── helpers/                  # 辅助工具
-│   │   │   ├── intent_classifier.py  # 意图分类器
-│   │   │   └── chat_helpers.py       # 聊天辅助函数
+│   │   │   └── chat_helpers.py       # 聊天辅助函数（安全检查、超时处理）
 │   │   └── logging/                  # 日志模块
 │   │       ├── config.py             # 日志配置
 │   │       └── decorator.py          # 日志装饰器
@@ -527,7 +572,7 @@ my-agent/
 │   │   ├── calculator.py             # 计算器
 │   │   └── time.py                   # 时间工具
 │   ├── skills/                       # Skills 插件系统
-│   │   ├── manager.py                # Skill 自动加载管理器
+│   │   ├── manager.py                # Skill 自动加载管理器（热重载、状态管理）
 │   │   ├── middleware.py             # Skill 中间件（运行时注入提示词）
 │   │   ├── web-content-analyzer/     # 网页内容分析 Skill
 │   │   │   └── SKILL.md
@@ -535,7 +580,7 @@ my-agent/
 │   │       └── SKILL.md
 │   ├── storage/                      # 存储层
 │   │   ├── mongodb.py                # MongoDB 连接（会话持久化 + 检查点）
-│   │   └── neo4j.py                  # Neo4j 管理器（数据导入 + 语义查询）
+│   │   └── neo4j.py                  # Neo4j 管理器（手动两步语义查询）
 │   ├── config.py                     # pydantic-settings 配置
 │   └── main.py                       # FastAPI 应用入口
 ├── static/                           # 静态资源

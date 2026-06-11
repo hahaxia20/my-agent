@@ -37,8 +37,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from src.config import get_settings_safe
 from src.core.context import SystemPromptContextManager, ConversationContextManager
 from src.core.logging.decorator import log_method_call
-from src.core.stream.manager import StreamFormatter
-from src.core.helpers.intent_classifier import classify_intent
 from src.core.helpers.chat_helpers import (
     check_input_security,
     format_subtask_results,
@@ -320,10 +318,6 @@ class MyAgent:
     def _format_subtask_results(sub_agent_results) -> List[Dict[str, Any]]:
         """格式化子任务结果列表（委托到 chat_helpers 模块）"""
         return format_subtask_results(sub_agent_results)
-
-    def _classify_intent(self, query: str) -> str:
-        """意图分类（委托到 intent_classifier 模块）"""
-        return classify_intent(query)
 
     async def _build_history_context(self, session_id: str) -> Optional[str]:
         """
