@@ -136,6 +136,9 @@ class MyAgent:
         # 初始化 LLM、工具、检查点
         self.llm = self._init_llm()
         self.tools = self._init_tools()
+        self.tool_map: Dict[str, StructuredTool] = {}
+        self.default_tool_names: List[str] = []
+        self._scoped_agents: Dict[tuple[str, ...], Any] = {}
         self.checkpointer = self._init_checkpointer() if self.config.enable_checkpoint else None
         
         # 初始化会话管理器（拆分自 agent.py，降低耦合）
@@ -143,15 +146,20 @@ class MyAgent:
         
         # 初始化产业链图谱工具（如果 Neo4j 可用）
         self._init_industry_graph_tools()
-        
+
         # 初始化 Sub-Agent 编排器
         self.sub_agent_orchestrator = self._init_sub_agent_orchestrator()
+
+        self._refresh_tool_registry()
+        scoped_default_tools = self._get_tools_by_names(self.default_tool_names)
+        self.sub_agent_orchestrator.tools = scoped_default_tools
+        self.sub_agent_orchestrator.worker.tools = scoped_default_tools
         
         # 流式处理器（委托模式，避免 agent.py 体量过大）
         self._stream_handler = StreamHandler(self)
         
         # 创建 ReAct Agent
-        self.agent = self._create_agent()
+        self.agent = self._create_agent(self._get_tools_by_names(self.default_tool_names))
         
         logger.info(f"✅ Agent 初始化完成 - 已加载 {len(self.tools)} 个工具")
         self._print_available_capabilities()
@@ -254,25 +262,123 @@ class MyAgent:
             logger.warning("💡 提示：启动 Neo4j 后可自动启用图谱功能")
 
     def _get_system_prompt(self) -> str:
-        """获取系统提示词 (通过 system_prompt_context_manager 统一管理)"""
+        """Get the base system prompt managed by the system prompt context manager."""
         return self.context_manager._build_system_prompt()
 
-    def _create_agent(self):
-        """创建 LangGraph ReAct Agent"""
+    @staticmethod
+    def _stringify_message_content(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict):
+                    item_type = item.get("type", "unknown")
+                    if item_type == "text":
+                        parts.append(item.get("text", ""))
+                    else:
+                        parts.append(json.dumps(item, ensure_ascii=False))
+                else:
+                    parts.append(str(item))
+            return "\n".join(part for part in parts if part)
+        return str(content)
+
+    def log_prompt_messages(self, stage: str, messages: List[Any]):
+        if not getattr(self.settings, "PROMPT_DEBUG", False):
+            return
+
+        logger.info("=" * 80)
+        logger.info("[prompt dump] stage=%s message_count=%s", stage, len(messages))
+        for index, message in enumerate(messages, start=1):
+            role = getattr(message, "type", message.__class__.__name__)
+            content = self._stringify_message_content(getattr(message, "content", ""))
+            logger.info("[prompt dump] %s #%s role=%s", stage, index, role)
+            if content:
+                for line in content.splitlines():
+                    logger.info("[prompt dump] %s", line)
+            else:
+                logger.info("[prompt dump]")
+        logger.info("=" * 80)
+
+    def _refresh_tool_registry(self):
+        """Refresh runtime indexes for registered LangChain tools."""
+        self.tool_map = {tool.name: tool for tool in self.tools}
+        preferred_defaults = ["calculator", "get_current_time", "web_search", "web_scraper"]
+        self.default_tool_names = [name for name in preferred_defaults if name in self.tool_map]
+        if not self.default_tool_names:
+            self.default_tool_names = list(self.tool_map.keys())
+
+    def _get_tools_by_names(self, tool_names: List[str]) -> List[StructuredTool]:
+        selected: List[StructuredTool] = []
+        seen = set()
+        for name in tool_names:
+            if name in seen:
+                continue
+            tool = self.tool_map.get(name)
+            if tool is not None:
+                selected.append(tool)
+                seen.add(name)
+        return selected
+
+    def get_scoped_tool_names(self, route_decision=None) -> List[str]:
+        route_value = None
+        skill_name = None
+        workflow_name = None
+
+        if isinstance(route_decision, dict):
+            route_value = route_decision.get("route")
+            skill_name = route_decision.get("skill_name")
+            workflow_name = route_decision.get("workflow_name")
+        else:
+            route_value = getattr(route_decision, "route", None)
+            skill_name = getattr(route_decision, "skill_name", None)
+            workflow_name = getattr(route_decision, "workflow_name", None)
+
+        if hasattr(route_value, "value"):
+            route_value = route_value.value
+
+        if route_value == "skill_direct":
+            if skill_name:
+                return self.skill_registry.get_allowed_tools(skill_name)
+            return []
+
+        if route_value == "workflow":
+            if workflow_name:
+                from src.core.workflows import workflow_registry
+
+                return workflow_registry.get_allowed_tools(workflow_name)
+            return []
+
+        if route_value in {"simple", "complex", None}:
+            return list(self.default_tool_names)
+
+        return list(self.tool_map.keys())
+
+    def get_scoped_agent(self, route_decision=None):
+        tool_names = self.get_scoped_tool_names(route_decision)
+        cache_key = tuple(tool_names)
+        if cache_key not in self._scoped_agents:
+            scoped_tools = self._get_tools_by_names(tool_names)
+            self._scoped_agents[cache_key] = self._create_agent(scoped_tools)
+            logger.info("created scoped agent with tools: %s", tool_names or [])
+        return self._scoped_agents[cache_key]
+
+    def _create_agent(self, tools: Optional[List[StructuredTool]] = None):
+        """??? LangGraph ReAct Agent"""
         from src.skills.middleware import SkillMiddleware
 
         system_prompt = self._get_system_prompt()
+        selected_tools = tools if tools is not None else self.tools
 
-        # 调试模式: 打印系统提示词
         if self.config.debug:
             logger.debug("=" * 80)
-            logger.debug("📝 [系统提示词]")
+            logger.debug("[system prompt]")
             logger.debug(system_prompt)
             logger.debug("=" * 80)
 
         return create_agent(
             model=self.llm,
-            tools=self.tools,
+            tools=selected_tools,
             checkpointer=self.checkpointer,
             system_prompt=system_prompt,
             middleware=[SkillMiddleware()],

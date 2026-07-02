@@ -1,66 +1,52 @@
 <!-- ========================================
-     My Agent - HTML 结构
+     My Agent - HTML Structure
      ======================================== -->
 
-<!-- 侧边栏切换按钮（移动端） -->
-<button class="sidebar-toggle" onclick="toggleSidebar()">☰</button>
+<button class="sidebar-toggle" onclick="toggleSidebar()">Menu</button>
 
 <div class="app-container">
-    <!-- 侧边栏 -->
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <button class="new-chat-btn" onclick="createNewSession()">
-                <span>＋</span>
-                <span>新对话</span>
+                <span>+</span>
+                <span>New Chat</span>
             </button>
-            
-            <!-- 侧边栏 Tab 切换 -->
+
             <div class="sidebar-tabs">
-                <button class="sidebar-tab active" id="tabChat">
-                    <span>💬</span> 对话
-                </button>
+                <button class="sidebar-tab active" id="tabChat">Chat</button>
             </div>
         </div>
-        
-        <!-- 会话列表面板 -->
+
         <div class="sidebar-panel active" id="panelChat">
-            <div class="session-list" id="sessionList">
-                <!-- 会话列表动态生成 -->
-            </div>
+            <div class="session-list" id="sessionList"></div>
         </div>
-        
-        <!-- 用户信息和退出按钮（左下角） -->
+
         <div class="sidebar-footer">
             <div class="user-info">
                 <span id="currentUser" class="username"></span>
                 <button onclick="logout()" class="logout-btn">
-                    <span class="logout-icon">🚪</span>
-                    <span>退出</span>
+                    <span class="logout-icon">Out</span>
+                    <span>Log Out</span>
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- 主内容区 -->
     <div class="main-content">
-        <!-- 对话界面 -->
         <div id="chatView" class="content-view active">
             <div class="chat-header">
                 <div class="header-left">
-                    <h2 id="chatTitle">新对话</h2>
+                    <h2 id="chatTitle">New Chat</h2>
 
-                    <!-- 子任务按钮（复杂任务完成后自动显示） -->
-                    <button class="mode-btn" onclick="toggleSubtaskPanel()" id="modeSubtask" style="display:none;">
-                        <span class="mode-icon">📋</span>子任务
-                    </button>
+                    <button class="mode-btn" onclick="toggleSubtaskPanel()" id="modeSubtask" style="display:none;">Subtasks</button>
                 </div>
             </div>
 
             <div class="chat-container" id="chatContainer">
                 <div class="empty-state">
-                    <div class="empty-state-icon">🦌</div>
-                    <h3 id="welcomeTitle">你好！我是你的 AI 助手</h3>
-                    <p id="welcomeDesc">我可以帮你搜索信息、分析产业链、处理数据，复杂任务会自动启用智能分析</p>
+                    <div class="empty-state-icon">AI</div>
+                    <h3 id="welcomeTitle">AI Assistant</h3>
+                    <p id="welcomeDesc">Upload a PDF or image first, then ask the agent to analyze it by file path.</p>
                 </div>
             </div>
 
@@ -68,28 +54,24 @@
                 <div class="input-wrapper">
                     <textarea
                         id="messageInput"
-                        placeholder="输入消息...（Ctrl+Enter 发送）"
+                        placeholder="Type a message... (Ctrl+Enter to send)"
                         rows="1"
                         oninput="autoResize(this)"
                         onkeydown="handleKeyDown(event)"
                     ></textarea>
                 </div>
-                <button class="send-btn" id="sendBtn" onclick="sendMessage()">
-                    发送
-                </button>
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
             </div>
         </div>
-
     </div>
 </div>
 
-<!-- 子任务面板 -->
 <div class="subtask-panel" id="subtaskPanel">
     <div class="subtask-panel-header">
-        <h3>📋 子任务详情</h3>
-        <button class="close-panel-btn" onclick="toggleSubtaskPanel()">×</button>
+        <h3>Subtask Details</h3>
+        <button class="close-panel-btn" onclick="toggleSubtaskPanel()">Close</button>
     </div>
     <div id="subtaskList">
-        <p style="color: #999; text-align: center; padding: 40px 0;">暂无子任务</p>
+        <p style="color: #999; text-align: center; padding: 40px 0;">No subtasks yet</p>
     </div>
 </div>

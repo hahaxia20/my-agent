@@ -1,0 +1,69 @@
+name: marketing-workflow
+description: Run a fixed end-to-end marketing flow across research, planning, copywriting, and social creative when the user asks for a complete marketing package.
+trigger_keywords:
+  - marketing workflow
+  - end-to-end marketing
+  - complete marketing package
+  - 完整营销方案
+  - 整套营销方案
+  - 全流程营销
+match:
+  intent_keywords:
+    - 营销方案
+    - 营销计划
+    - 宣发方案
+    - campaign plan
+    - marketing plan
+    - go-to-market plan
+  sequence_keywords:
+    - 从
+    - 到
+    - 先
+    - 再
+    - 然后
+    - 全流程
+    - 一整套
+    - end-to-end
+  phase_groups:
+    research:
+      - 调研
+      - 研究
+      - 竞品
+      - 市场分析
+      - audience research
+      - competitor analysis
+    planning:
+      - 规划
+      - 策划
+      - 日历
+      - 内容矩阵
+      - content plan
+      - content calendar
+    copywriting:
+      - 文案
+      - 标题
+      - slogan
+      - cta
+      - landing page copy
+      - ad copy
+    creative:
+      - 海报
+      - 创意
+      - 配图
+      - 小红书
+      - poster
+      - social creative
+  min_phase_hits: 2
+steps:
+  - name: Research
+    skill_name: marketing-research
+    description: Research the market, competitors, audience, and positioning signals related to the request.
+  - name: Planning
+    skill_name: content-planner
+    description: Turn the research into a channel-aware content or campaign plan with clear structure.
+  - name: Copywriting
+    skill_name: marketing-copywriting
+    description: Produce conversion-oriented copy based on the plan and positioning.
+  - name: Social Creative
+    skill_name: social-creative
+    description: Translate the campaign into social creative directions and optional asset-generation instructions.

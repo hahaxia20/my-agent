@@ -1,78 +1,96 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
+﻿<!DOCTYPE html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>登录 - My Agent</title>
-    
-    <!-- 样式文件 -->
+    <title>Login - My Agent</title>
     <link rel="stylesheet" href="static/css/login.css">
 </head>
 <body>
-    <!-- 登录容器 -->
-    <div class="auth-container">
-        <div class="auth-header">
-            <h1>🦌 My Agent</h1>
-            <p>AI Agent 智能助手</p>
-        </div>
+    <div class="login-glow login-glow-one"></div>
+    <div class="login-glow login-glow-two"></div>
 
-        <div class="auth-tabs">
-            <button class="auth-tab active" onclick="switchTab('login')">登录</button>
-            <button class="auth-tab" onclick="switchTab('register')">注册</button>
-        </div>
+    <main class="auth-shell">
+        <section class="auth-hero">
+            <div class="hero-badge">My Agent</div>
+            <h1>Secure AI workspace for real production work</h1>
+            <p>Sign in once to access persistent sessions, file-based analysis, and task execution history in one console.</p>
 
-        <!-- 登录表单 -->
-        <div id="loginForm" class="auth-form active">
-            <div id="loginError" class="error-message"></div>
+            <div class="hero-points">
+                <div class="hero-point">
+                    <span class="hero-point-title">Persistent Sessions</span>
+                    <p>Resume the exact conversation state without rebuilding context.</p>
+                </div>
+                <div class="hero-point">
+                    <span class="hero-point-title">Multimodal Inputs</span>
+                    <p>Bring PDFs and images directly into the same working thread.</p>
+                </div>
+                <div class="hero-point">
+                    <span class="hero-point-title">Operational Visibility</span>
+                    <p>Track long-running decomposed tasks from a single interface.</p>
+                </div>
+            </div>
+        </section>
 
-            <div class="form-group">
-                <label>用户名</label>
-                <input type="text" id="loginUsername" placeholder="输入用户名" autocomplete="username">
+        <section class="auth-container">
+            <div class="auth-header">
+                <div class="auth-kicker">Access</div>
+                <h2>Enter your workspace</h2>
+                <p>Use an existing account or create a new one in a few seconds.</p>
             </div>
 
-            <div class="form-group">
-                <label>密码</label>
-                <input type="password" id="loginPassword" placeholder="输入密码" autocomplete="current-password">
+            <div class="auth-tabs">
+                <button class="auth-tab active" onclick="switchTab('login')">Login</button>
+                <button class="auth-tab" onclick="switchTab('register')">Register</button>
             </div>
 
-            <button class="auth-btn" id="loginBtn" onclick="handleLogin()">
-                登录
-            </button>
+            <div id="loginForm" class="auth-form active">
+                <div id="loginError" class="error-message"></div>
+                <div id="loginSuccess" class="success-message"></div>
 
-            <div class="divider">或者</div>
+                <div class="form-group">
+                    <label for="loginUsername">Username</label>
+                    <input type="text" id="loginUsername" placeholder="Enter username" autocomplete="username">
+                </div>
 
-            <div class="demo-hint">
-                💡 <strong>演示模式</strong>：直接输入任意用户名即可登录
-            </div>
-        </div>
+                <div class="form-group">
+                    <label for="loginPassword">Password</label>
+                    <input type="password" id="loginPassword" placeholder="Enter password" autocomplete="current-password">
+                </div>
 
-        <!-- 注册表单 -->
-        <div id="registerForm" class="auth-form">
-            <div id="registerError" class="error-message"></div>
-            <div id="registerSuccess" class="success-message"></div>
+                <button class="auth-btn" id="loginBtn" onclick="handleLogin()">Login</button>
 
-            <div class="form-group">
-                <label>用户名</label>
-                <input type="text" id="registerUsername" placeholder="输入用户名（至少3个字符）" autocomplete="username">
-            </div>
+                <div class="divider">Workspace access</div>
 
-            <div class="form-group">
-                <label>密码</label>
-                <input type="password" id="registerPassword" placeholder="输入密码（至少6个字符）" autocomplete="new-password">
+                <div class="demo-hint">
+                    Register below if you do not have an account yet. After login you will be redirected into the main console.
+                </div>
             </div>
 
-            <div class="form-group">
-                <label>确认密码</label>
-                <input type="password" id="registerConfirmPassword" placeholder="再次输入密码" autocomplete="new-password">
+            <div id="registerForm" class="auth-form">
+                <div id="registerError" class="error-message"></div>
+                <div id="registerSuccess" class="success-message"></div>
+
+                <div class="form-group">
+                    <label for="registerUsername">Username</label>
+                    <input type="text" id="registerUsername" placeholder="At least 3 characters" autocomplete="username">
+                </div>
+
+                <div class="form-group">
+                    <label for="registerPassword">Password</label>
+                    <input type="password" id="registerPassword" placeholder="At least 6 characters" autocomplete="new-password">
+                </div>
+
+                <div class="form-group">
+                    <label for="registerConfirmPassword">Confirm Password</label>
+                    <input type="password" id="registerConfirmPassword" placeholder="Repeat your password" autocomplete="new-password">
+                </div>
+
+                <button class="auth-btn" id="registerBtn" onclick="handleRegister()">Register</button>
             </div>
+        </section>
+    </main>
 
-            <button class="auth-btn" id="registerBtn" onclick="handleRegister()">
-                注册
-            </button>
-        </div>
-    </div>
-
-    <!-- JavaScript 文件 -->
     <script src="static/js/login.js"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from pathlib import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # 获取项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -30,8 +30,27 @@ class Settings(BaseSettings):
     APP_NAME: str = "My Agent"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True
+    PROMPT_DEBUG: bool = False
+    ROUTE_DEBUG: bool = False
+    TOOL_DEBUG: bool = False
 
-    API_HOST: str = "0.0.0.0"
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def _normalize_debug(cls, value):
+        """Allow legacy string values like release/dev in env configuration."""
+        if isinstance(value, bool) or value is None:
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            truthy = {"1", "true", "yes", "y", "on", "debug", "dev", "development"}
+            falsy = {"0", "false", "no", "n", "off", "release", "prod", "production"}
+            if normalized in truthy:
+                return True
+            if normalized in falsy:
+                return False
+        return value
+
+    API_HOST: str = "127.0.0.1"
     API_PORT: int = 8001
     API_PREFIX: str = "/api/v1"
 
@@ -41,16 +60,19 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str
     API_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     MODEL_NAME: str = "qwen-plus"
+    IMAGE_MODEL: str = "qwen-vl-max"
+    IMAGEGEN_MODEL: str = "wanx2.1-t2i-plus"
+    IMAGEGEN_OUTPUT_DIR: str = "data/uploads/images"
     MAX_TOKENS: int = 4096
     TEMPERATURE: float = 0.7
 
     # ═══════════════════════════════════════
-    # 意图分类器配置（本地小模型）
+    # 意图分类器配置（Router + Executor 架构的 LLM 路由）
     # ═══════════════════════════════════════
     # Ollama 兼容 OpenAI 接口，默认地址 http://localhost:11434/v1
     INTENT_CLASSIFIER_BASE_URL: str = "http://localhost:11434/v1"
     INTENT_CLASSIFIER_API_KEY: str = "ollama"  # Ollama 不校验 key，填任意值即可
-    INTENT_CLASSIFIER_MODEL: str = "qwen2.5:7b-instruct-q4_k_m"
+    INTENT_CLASSIFIER_MODEL: str = "qwen3:8b-q4_K_M"
     INTENT_CLASSIFIER_TIMEOUT: int = 10  # 分类超时（秒）
     INTENT_CLASSIFIER_ENABLED: bool = True  # False 则退回纯关键词规则
 
@@ -203,6 +225,7 @@ def print_config_summary():
     print(f"  API: {s.API_BASE_URL}")
     print(f"  API Key: {s.OPENAI_API_KEY[:10]}...{s.OPENAI_API_KEY[-4:]}")
     print(f"  MongoDB: {s.MONGODB_URL}")
+    print(f"  Neo4j: {s.NEO4J_URI}")
     print(f"  上下文: {s.CONTEXT_MAX_TOKENS} tokens")
     print(f"  提示词版本: v{s.SYSTEM_PROMPT_VERSION}")
     print(f"  对话上下文:")

@@ -1,29 +1,21 @@
-"""
-My Agent - 生产级 AI Agent 系统
-"""
+"""My Agent application entrypoint."""
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from pathlib import Path
-from src.config import get_settings_safe, print_config_summary, validate_config
+
+from fastapi import FastAPI
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+
 from src.api.middleware import setup_cors
-from src.api.routes import chat_router
-from src.api.routes import auth_router
-from src.api.routes import complex_tasks_router
-from src.api.routes import skills_router
+from src.api.routes import auth_router, chat_router, complex_tasks_router, skills_router, uploads_router
+from src.config import PROJECT_ROOT, get_settings_safe, print_config_summary, validate_config
 from src.core.logging.config import setup_logging
 
-# ═══════════════════════════════════════
-# 应用生命周期
-# ═══════════════════════════════════════
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用启动和关闭时的处理"""
-    
-    # 初始化日志系统（必须在最前面）
+    """Application startup and shutdown hooks."""
     settings = get_settings_safe()
     setup_logging(
         log_level=getattr(settings, 'LOG_LEVEL', 'INFO'),
@@ -31,139 +23,131 @@ async def lifespan(app: FastAPI):
         log_to_file=True,
         log_file_path='logs/agent.log',
         json_format=False,
-        enable_emoji=True
+        enable_emoji=True,
     )
 
-    # 启动时
-    print("\n" + "=" * 60)
-    print("🚀 My Agent 启动中...")
-    print("=" * 60)
+    print('\n' + '=' * 60)
+    print('My Agent starting...')
+    print('=' * 60)
 
-    # 验证配置
     if not validate_config():
-        raise RuntimeError("配置验证失败，请检查 .env1 文件")
+        raise RuntimeError('Configuration validation failed. Please check the environment settings.')
 
-    # 打印配置摘要
     print_config_summary()
 
-    # 初始化 LangSmith 监控（如果启用）
-    if settings.LANGSMITH_ENABLED:
-        import os
-        os.environ["LANGSMITH_TRACING"] = "true"
-        os.environ["LANGCHAIN_PROJECT"] = settings.LANGSMITH_PROJECT
-        if settings.LANGCHAIN_API_KEY:
-            os.environ["LANGCHAIN_API_KEY"] = settings.LANGCHAIN_API_KEY
-        print(f"🔍 LangSmith 监控已启用，项目: {settings.LANGSMITH_PROJECT}")
-    else:
-        print("🔍 LangSmith 监控未启用（LANGSMITH_ENABLED=False）")
+    import os
 
-    # 预加载 Agent（可选）
-    print("📦 预加载 Agent...")
+    tracing_enabled = bool(settings.LANGSMITH_ENABLED and settings.LANGCHAIN_API_KEY)
+    if tracing_enabled:
+        os.environ['LANGSMITH_TRACING'] = 'true'
+        os.environ['LANGCHAIN_TRACING_V2'] = 'true'
+        os.environ['LANGCHAIN_PROJECT'] = settings.LANGSMITH_PROJECT
+        os.environ['LANGCHAIN_API_KEY'] = settings.LANGCHAIN_API_KEY
+        if settings.LANGSMITH_ENDPOINT:
+            os.environ['LANGSMITH_ENDPOINT'] = settings.LANGSMITH_ENDPOINT
+        print(f'LangSmith tracing enabled: {settings.LANGSMITH_PROJECT}')
+    else:
+        for env_name in (
+            'LANGSMITH_TRACING',
+            'LANGCHAIN_TRACING_V2',
+            'LANGCHAIN_PROJECT',
+            'LANGCHAIN_API_KEY',
+            'LANGSMITH_ENDPOINT',
+        ):
+            os.environ.pop(env_name, None)
+        disabled_reason = 'LANGSMITH_ENABLED=False' if not settings.LANGSMITH_ENABLED else 'missing LANGCHAIN_API_KEY'
+        print(f'LangSmith tracing disabled: {disabled_reason}')
+
+    print('Preloading agent...')
     from src.core.agent import get_agent
-    agent = await get_agent()  # 等待异步函数完成
-    print(f"✅ Agent 加载完成: {type(agent).__name__}\n")
+
+    agent = await get_agent()
+    print(f'Agent ready: {type(agent).__name__}\n')
 
     yield
 
-    # 关闭时
-    print("\n" + "=" * 60)
-    print("👋 My Agent 关闭中...")
-    print("=" * 60)
+    print('\n' + '=' * 60)
+    print('My Agent shutting down...')
+    print('=' * 60)
 
-
-# ═══════════════════════════════════════
-# 创建应用
-# ═══════════════════════════════════════
 
 def create_app() -> FastAPI:
-    """创建 FastAPI 应用"""
-
+    """Create the FastAPI application."""
     settings = get_settings_safe()
 
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
-        description="生产级 AI Agent 系统",
+        description='Production-grade AI agent service',
         lifespan=lifespan,
-        docs_url="/docs",
-        redoc_url="/redoc"
+        docs_url='/docs',
+        redoc_url='/redoc',
     )
 
-    # 配置 CORS
     setup_cors(app)
 
-    # 注册路由
     app.include_router(chat_router)
     app.include_router(auth_router)
     app.include_router(complex_tasks_router)
     app.include_router(skills_router)
+    app.include_router(uploads_router)
 
-
-    # 静态文件目录（相对于项目根目录）
     base_dir = Path(__file__).resolve().parent.parent
+    app.mount('/static', StaticFiles(directory=base_dir / 'static'), name='static')
+    app.mount('/uploads', StaticFiles(directory=PROJECT_ROOT / 'data' / 'uploads'), name='uploads')
 
-    # 挂载静态资源目录（css / js / html）
-    app.mount("/static", StaticFiles(directory=base_dir / "static"), name="static")
-
-    # 健康检查
-    @app.get("/health", tags=["health"])
+    @app.get('/health', tags=['health'])
     async def health_check():
-        """健康检查"""
+        """Basic health check."""
         return {
-            "status": "ok",
-            "app": settings.APP_NAME,
-            "version": settings.APP_VERSION
+            'status': 'ok',
+            'app': settings.APP_NAME,
+            'version': settings.APP_VERSION,
         }
 
-    # 登录页
-    @app.get("/login", tags=["pages"])
+    @app.get('/login', tags=['pages'])
     async def login_page():
-        """登录页面"""
-        return FileResponse(base_dir / "login.html")
+        """Serve the login page."""
+        return FileResponse(base_dir / 'login.html')
 
-    # 兼容旧路径：/login.html 重定向到 /login
-    @app.get("/login.html", tags=["pages"], include_in_schema=False)
+    @app.get('/login.html', tags=['pages'], include_in_schema=False)
     async def login_html_redirect():
-        return RedirectResponse(url="/login")
+        return RedirectResponse(url='/login')
 
-    # 根路径 → 主界面
-    @app.get("/", tags=["pages"])
+    @app.get('/', tags=['pages'])
     async def index_page():
-        """主界面"""
-        return FileResponse(base_dir / "index.html")
+        """Serve the main chat page."""
+        return FileResponse(base_dir / 'index.html')
 
-    # 兼容旧路径：/index.html 重定向到 /
-    @app.get("/index.html", tags=["pages"], include_in_schema=False)
+    @app.get('/index.html', tags=['pages'], include_in_schema=False)
     async def index_html_redirect():
-        return RedirectResponse(url="/")
+        return RedirectResponse(url='/')
 
-    # 全局异常处理
     @app.exception_handler(Exception)
     async def global_exception_handler(request, exc):
-        """全局异常处理"""
+        """Global exception handler."""
         return JSONResponse(
             status_code=500,
             content={
-                "success": False,
-                "error": "Internal Server Error",
-                "detail": str(exc) if settings.DEBUG else None
-            }
+                'success': False,
+                'error': 'Internal Server Error',
+                'detail': str(exc) if settings.DEBUG else None,
+            },
         )
 
     return app
 
 
-# 创建应用实例
 app = create_app()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     import uvicorn
 
     settings = get_settings_safe()
 
     uvicorn.run(
-        "src.main:app",
+        'src.main:app',
         host=settings.API_HOST,
         port=settings.API_PORT,
-        reload=settings.DEBUG
+        reload=settings.DEBUG,
     )

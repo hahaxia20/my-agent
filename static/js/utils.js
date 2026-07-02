@@ -1,51 +1,35 @@
-/* ========================================
-   My Agent - 工具函数
+﻿/* ========================================
+   My Agent - Utility Functions
    ======================================== */
 
-// API 基础配置（空字符串表示同源，由 Nginx 代理转发）
 const API_BASE_URL = '';
 
-// 格式化时间
 function formatTime(timestamp) {
-    // MongoDB 返回的是 UTC 时间字符串
     const date = new Date(timestamp);
     const now = new Date();
-
-    // 计算时间差（毫秒）
     const diff = now - date;
-
-    // 转换为分钟
     const diffMinutes = diff / 60000;
     const diffHours = diff / 3600000;
     const diffDays = diff / 86400000;
 
-    if (diffMinutes < 1) return '刚刚';
-    if (diffMinutes < 60) return `${Math.floor(diffMinutes)}分钟前`;
-    if (diffHours < 24) return `${Math.floor(diffHours)}小时前`;
-    if (diffDays < 7) return `${Math.floor(diffDays)}天前`;
+    if (diffMinutes < 1) return 'just now';
+    if (diffMinutes < 60) return `${Math.floor(diffMinutes)} min ago`;
+    if (diffHours < 24) return `${Math.floor(diffHours)} hr ago`;
+    if (diffDays < 7) return `${Math.floor(diffDays)} day ago`;
 
-    // 超过7天显示具体日期
-    return date.toLocaleDateString('zh-CN', {
+    return date.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
     });
 }
 
-// 获取相对时间（模拟）
-function getRelativeTime(index) {
-    const times = ['刚刚', '5分钟前', '10分钟前', '15分钟前', '20分钟前', '30分钟前'];
-    return times[index % times.length];
-}
-
-// 自动调整文本框高度
 function autoResize(textarea) {
     textarea.style.height = 'auto';
-    textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
 }
 
-// 滚动到底部
 function scrollToBottom() {
     const container = document.getElementById('chatContainer');
     if (container) {
@@ -53,37 +37,29 @@ function scrollToBottom() {
     }
 }
 
-// 切换侧边栏（移动端）
 function toggleSidebar() {
     document.getElementById('sidebar').classList.toggle('open');
 }
 
-// 获取当前用户
 function getCurrentUser() {
     return localStorage.getItem('currentUser');
 }
 
-// 显示当前用户
 function displayCurrentUser() {
     const user = getCurrentUser();
     if (user) {
-        document.getElementById('currentUser').textContent = `👤 ${user}`;
+        document.getElementById('currentUser').textContent = user;
     }
 }
 
-// 退出登录
 function logout() {
-    if (!confirm('确定要退出登录吗？')) return;
+    if (!confirm('Are you sure you want to log out?')) return;
 
-    // 清除登录信息
     localStorage.removeItem('authToken');
     localStorage.removeItem('currentUser');
-
-    // 跳转到登录页
     window.location.href = 'login.html';
 }
 
-// 处理键盘事件
 function handleKeyDown(event) {
     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
@@ -91,7 +67,6 @@ function handleKeyDown(event) {
     }
 }
 
-// 检查登录状态
 function checkAuth() {
     const token = localStorage.getItem('authToken');
     if (!token) {
@@ -101,3 +76,13 @@ function checkAuth() {
     return true;
 }
 
+function setUploadStatus(message = '', type = '') {
+    const status = document.getElementById('uploadStatus');
+    if (!status) return;
+
+    status.textContent = message;
+    status.className = 'upload-status';
+    if (type) {
+        status.classList.add(type);
+    }
+}

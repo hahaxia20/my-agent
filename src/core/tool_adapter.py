@@ -18,6 +18,14 @@ from pydantic import create_model, Field
 logger = logging.getLogger(__name__)
 
 
+def _tool_debug_enabled() -> bool:
+    try:
+        from src.config import get_settings_safe
+        return bool(getattr(get_settings_safe(), "TOOL_DEBUG", False))
+    except Exception:
+        return False
+
+
 # ═══════════════════════════════════════════════════════════
 # 工具函数
 # ═══════════════════════════════════════════════════════════

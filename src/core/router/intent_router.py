@@ -1,62 +1,74 @@
-"""
-意图路由器 (IntentRouter)
+﻿"""Intent router for selecting the appropriate execution path."""
 
-使用本地小模型（Qwen2.5-7B via Ollama）进行结构化路由决策，
-返回 RouteDecision，包含路由类型、目标 Skill、置信度等信息。
-
-复用现有 INTENT_CLASSIFIER_* 配置，无需新增环境变量。
-"""
+from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import re
 from typing import Optional
 
-from src.core.router.route_types import RouteDecision, RouteType, CONFIDENCE_THRESHOLD
+from src.core.router.route_types import RouteDecision, RouteType
 
 logger = logging.getLogger(__name__)
 
 
-# ═══════════════════════════════════════════════════════════
-# 路由 System Prompt
-# ═══════════════════════════════════════════════════════════
+_ROUTE_SYSTEM_PROMPT = """You are a precise agent router. Decide the best execution path from the user query, context summary, loaded skills, and loaded workflows.
 
-_ROUTE_SYSTEM_PROMPT = """你是一个精准的 Agent 路由器。根据用户查询、对话上下文和已加载 Skills，决定最佳执行路径。
+Loaded workflows:
+{workflows_info}
 
-已加载 Skills:
+Loaded skills:
 {skills_info}
 
-路由规则（严格按优先级）:
-1. **skill_direct**：如果查询明确指向某个 Skill（如"分析这个网站"→web-content-analyzer，"分析数据"→data-analysis），优先 skill_direct 并指定 skill_name。
-2. **graph_only**：如果查询是产业链/行业图谱的单次事实查询（如"新能源汽车产业链有哪些环节"、"半导体上游是什么"），走 graph_only。
-3. **simple**：日常问答、闲聊、定义解释、打招呼、简单计算、单步事实检索。
-4. **complex**：需要多维度分析、跨主题对比、深度报告、系统性调研、多步骤推理。
+Routing rules, in priority order:
+1. workflow: use when the query asks for a fixed end-to-end business process or staged delivery across multiple specialist steps, such as research -> planning -> copywriting -> creative.
+2. skill_direct: use when the query clearly points to a specific skill such as website analysis, image analysis, image generation, PDF analysis, stock-chart analysis, data analysis, or skill creation.
+3. graph_only: use when the query is a direct supply-chain or industry-chain structure lookup.
+4. simple: use for casual Q&A, definitions, greetings, simple retrieval, or single-step tasks.
+5. complex: use for open-ended deep analysis, research, comparison, multi-step reasoning, or report-style tasks where the decomposition is not fixed in advance.
 
-输出严格 JSON，不要解释，格式如下：
+Special rule:
+- Poster, key-visual, main-visual, and image-asset requests should prefer image-generation or marketing-creative skills unless the user explicitly asks for frontend code, HTML, CSS, React, Vue, pages, or components.
+
+Return strict JSON only:
 {{
-  "route": "skill_direct" | "simple" | "complex" | "graph_only",
-  "skill_name": "skill-name（仅 skill_direct 时填写，其他填 null）",
+  "route": "workflow" | "skill_direct" | "simple" | "complex" | "graph_only",
+  "skill_name": "skill-name" or null,
+  "workflow_name": "workflow-name" or null,
   "confidence": 0.0-1.0,
-  "reason": "简短决策原因",
+  "reason": "short reason",
   "sub_tasks": null,
   "model_override": null
 }}"""
 
 
-# ═══════════════════════════════════════════════════════════
-# 懒加载 LLM 客户端（与 intent_classifier.py 保持一致）
-# ═══════════════════════════════════════════════════════════
-
 _llm = None
 
 
+def _log_route_prompt(system_prompt: str, user_content: str):
+    from src.config import get_settings_safe
+
+    settings = get_settings_safe()
+    if not getattr(settings, "ROUTE_DEBUG", False):
+        return
+
+    logger.info("=" * 80)
+    logger.info("[route prompt] system")
+    for line in system_prompt.splitlines():
+        logger.info("[route prompt] %s", line)
+    logger.info("[route prompt] user")
+    for line in user_content.splitlines():
+        logger.info("[route prompt] %s", line)
+    logger.info("=" * 80)
+
+
 def _get_llm():
-    """懒加载本地小模型 LLM 客户端，复用 INTENT_CLASSIFIER_* 配置"""
     global _llm
     if _llm is None:
-        from src.config import get_settings_safe
         from langchain_openai import ChatOpenAI
         from pydantic import SecretStr
+        from src.config import get_settings_safe
 
         settings = get_settings_safe()
         _llm = ChatOpenAI(
@@ -64,182 +76,265 @@ def _get_llm():
             api_key=SecretStr(settings.INTENT_CLASSIFIER_API_KEY),
             base_url=settings.INTENT_CLASSIFIER_BASE_URL,
             temperature=0,
-            max_tokens=300,   # 路由 JSON 不需要太多 token
+            max_tokens=300,
             timeout=settings.INTENT_CLASSIFIER_TIMEOUT,
         )
         logger.info(
-            f"🎯 [路由器] LLM 初始化: {settings.INTENT_CLASSIFIER_MODEL} "
-            f"@ {settings.INTENT_CLASSIFIER_BASE_URL}"
+            "Intent router LLM initialized: %s @ %s",
+            settings.INTENT_CLASSIFIER_MODEL,
+            settings.INTENT_CLASSIFIER_BASE_URL,
         )
     return _llm
 
 
-# ═══════════════════════════════════════════════════════════
-# 关键词兜底（LLM 不可用时）
-# ═══════════════════════════════════════════════════════════
+def _normalize_decision(decision: RouteDecision) -> RouteDecision:
+    if decision.route != RouteType.SKILL_DIRECT:
+        decision.skill_name = None
+    if decision.route != RouteType.WORKFLOW:
+        decision.workflow_name = None
+    return decision
 
-def _keyword_fallback(query: str, loaded_skills: Optional[str] = None) -> RouteDecision:
-    """
-    纯关键词兜底路由，保证 LLM 宕机时系统仍可用
 
-    优先级：skill_direct → graph_only → complex → simple
-    """
-    import re
+def _direct_route_override(query: str) -> Optional[RouteDecision]:
     text = query.lower().strip()
 
-    # 1. 尝试匹配 Skill
-    #    根据实际 Skill 关键词判断（web-content-analyzer、data-analysis 等）
-    skill_keywords = {
-        "web-content-analyzer": [
-            r"分析.{0,6}(网站|网页|url|链接|文章)",
-            r"(网站|网页|url|链接).{0,6}(分析|解读|总结|评估)",
-            r"帮我.{0,4}(分析|看|读).{0,6}(网站|网页|链接)",
-        ],
-        "data-analysis": [
-            r"(数据分析|数据处理|统计分析|可视化)",
-            r"分析.{0,6}(数据|表格|csv|excel)",
-        ],
-    }
-    if loaded_skills:
-        for skill_name, patterns in skill_keywords.items():
-            for p in patterns:
-                if re.search(p, text):
-                    logger.info(
-                        f"⚠️ [关键词兜底路由] → skill_direct({skill_name}) | query: {query[:60]}"
-                    )
-                    return RouteDecision(
-                        route=RouteType.SKILL_DIRECT,
-                        skill_name=skill_name,
-                        confidence=0.75,
-                        reason=f"关键词匹配到 Skill: {skill_name}"
-                    )
+    frontend_terms = [
+        "html",
+        "css",
+        "react",
+        "vue",
+        "前端",
+        "页面",
+        "组件",
+        "网页",
+        "web page",
+        "landing page",
+        "代码",
+    ]
+    if any(term in text for term in frontend_terms):
+        return None
 
-    # 2. 图谱查询
+    poster_terms = [
+        "海报",
+        "poster",
+        "主视觉",
+        "核心主视觉",
+        "活动主视觉",
+        "kv",
+        "key visual",
+        "视觉海报",
+        "cover image",
+    ]
+    marketing_terms = [
+        "社媒",
+        "campaign",
+        "宣发",
+        "小红书",
+        "social",
+        "launch",
+        "营销",
+        "投放",
+        "品牌传播",
+        "渠道投放",
+    ]
+    image_generation_terms = [
+        "生成",
+        "生图",
+        "create",
+        "generate",
+        "输出到",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        "图片",
+        "图像",
+        "image",
+    ]
+
+    has_poster = any(term in text for term in poster_terms)
+    has_marketing = any(term in text for term in marketing_terms)
+    has_image_intent = any(term in text for term in image_generation_terms)
+
+    if has_poster and has_marketing:
+        return RouteDecision(
+            route=RouteType.SKILL_DIRECT,
+            skill_name="social-creative",
+            confidence=0.93,
+            reason="direct override: marketing poster/main-visual request",
+        )
+
+    if has_poster and (has_image_intent or len(text) <= 24):
+        return RouteDecision(
+            route=RouteType.SKILL_DIRECT,
+            skill_name="imagegen",
+            confidence=0.93,
+            reason="direct override: poster/main-visual image generation request",
+        )
+
+    return None
+
+
+def _keyword_fallback(
+    query: str,
+    loaded_skills: Optional[str] = None,
+    loaded_workflows: Optional[str] = None,
+) -> RouteDecision:
+    from src.core.workflows import workflow_registry
+    from src.skills.manager import skill_registry
+
+    direct_override = _direct_route_override(query)
+    if direct_override:
+        logger.info(
+            "[keyword fallback] -> %s(%s) | query: %s",
+            direct_override.route,
+            direct_override.skill_name,
+            query[:80],
+        )
+        return direct_override
+
+    text = query.lower().strip()
+
+    if loaded_workflows:
+        matched = workflow_registry.match_query_with_reason(query)
+        if matched:
+            workflow_name, match_reason = matched
+            logger.info("[keyword fallback] -> workflow(%s) | query: %s", workflow_name, query[:80])
+            return RouteDecision(
+                route=RouteType.WORKFLOW,
+                workflow_name=workflow_name,
+                confidence=0.84,
+                reason=f"workflow match: {match_reason}",
+            )
+
+    if loaded_skills:
+        for skill in skill_registry.get_active_skills():
+            trigger_keywords = [str(keyword).lower() for keyword in getattr(skill, "trigger_keywords", [])]
+            if any(keyword and keyword in text for keyword in trigger_keywords):
+                logger.info("[keyword fallback] -> skill_direct(%s) | query: %s", skill.name, query[:80])
+                return RouteDecision(
+                    route=RouteType.SKILL_DIRECT,
+                    skill_name=skill.name,
+                    confidence=0.78,
+                    reason=f"keyword matched skill trigger: {skill.name}",
+                )
+
     graph_patterns = [
         r"(产业链|供应链|价值链).{0,6}(有哪些|是什么|结构|环节|组成)",
-        r"(上游|中游|下游).{0,6}(是|有|包含)",
+        r"(上游|中游|下游).{0,6}(是什么|包括|包含)",
         r"(行业|产业).{0,6}(图谱|结构|链条)",
     ]
-    for p in graph_patterns:
-        if re.search(p, text):
-            logger.info(f"⚠️ [关键词兜底路由] → graph_only | query: {query[:60]}")
+    for rule in graph_patterns:
+        if re.search(rule, text):
+            logger.info("[keyword fallback] -> graph_only | query: %s", query[:80])
             return RouteDecision(
                 route=RouteType.GRAPH_ONLY,
                 confidence=0.8,
-                reason="关键词匹配到图谱查询"
+                reason="keyword matched graph query",
             )
 
-    # 3. 复杂任务
     complex_patterns = [
-        r"对比.{0,20}(和|与|还是)", r"比较.{0,20}(和|与|还是)",
+        r"对比.{0,20}(和|与|还是)",
+        r"比较.{0,20}(和|与|还是)",
         r"(深度|详细|全面|系统).{0,4}(分析|报告|研究|调研)",
         r"(综合|横向|纵向).{0,4}(分析|对比|比较)",
-        r"(产业链|行业).{0,4}(对比|比较|分析)",
     ]
-    for p in complex_patterns:
-        if re.search(p, text):
-            logger.info(f"⚠️ [关键词兜底路由] → complex | query: {query[:60]}")
+    for rule in complex_patterns:
+        if re.search(rule, text):
+            logger.info("[keyword fallback] -> complex | query: %s", query[:80])
             return RouteDecision(
                 route=RouteType.COMPLEX,
                 confidence=0.7,
-                reason="关键词匹配到复杂任务"
+                reason="keyword matched complex task",
             )
 
-    # 4. 默认简单
-    logger.info(f"⚠️ [关键词兜底路由] → simple | query: {query[:60]}")
+    logger.info("[keyword fallback] -> simple | query: %s", query[:80])
     return RouteDecision(
         route=RouteType.SIMPLE,
         confidence=0.6,
-        reason="关键词兜底，默认 simple"
+        reason="keyword fallback defaulted to simple",
     )
 
-
-# ═══════════════════════════════════════════════════════════
-# 对外接口
-# ═══════════════════════════════════════════════════════════
 
 async def route_query(
     query: str,
     context_summary: Optional[str] = None,
     loaded_skills: Optional[str] = None,
+    loaded_workflows: Optional[str] = None,
 ) -> RouteDecision:
-    """
-    异步路由决策（主路径）
-
-    使用本地小模型做结构化路由判断，返回 RouteDecision。
-    超时或异常时退回关键词兜底，保证系统可用性。
-
-    Args:
-        query: 用户查询
-        context_summary: 对话历史摘要（可选）
-        loaded_skills: 已加载 Skills 描述字符串（由 skill_registry.get_skills_metadata_list() 生成）
-
-    Returns:
-        RouteDecision: 路由决策结果
-    """
+    from langchain_core.messages import HumanMessage, SystemMessage
     from src.config import get_settings_safe
-    from langchain_core.messages import SystemMessage, HumanMessage
+
+    direct_override = _direct_route_override(query)
+    if direct_override:
+        logger.info(
+            "Router -> %s(%s) confidence=%.2f | reason: %s | query: %s",
+            direct_override.route,
+            direct_override.skill_name,
+            direct_override.confidence,
+            direct_override.reason,
+            query[:80],
+        )
+        return direct_override
 
     settings = get_settings_safe()
-
-    # 功能关闭时直接走关键词兜底
     if not settings.INTENT_CLASSIFIER_ENABLED:
-        logger.info("🎯 [路由器] INTENT_CLASSIFIER_ENABLED=False，使用关键词兜底")
-        return _keyword_fallback(query, loaded_skills)
+        logger.info("Intent classifier disabled, using keyword fallback")
+        return _keyword_fallback(query, loaded_skills, loaded_workflows)
 
-    skills_info = loaded_skills or "暂无可用 Skills"
-    system_prompt = _ROUTE_SYSTEM_PROMPT.format(skills_info=skills_info)
+    skills_info = loaded_skills or "No active skills"
+    workflows_info = loaded_workflows or "No active workflows"
+    system_prompt = _ROUTE_SYSTEM_PROMPT.format(
+        skills_info=skills_info,
+        workflows_info=workflows_info,
+    )
 
-    user_content = f"查询: {query}"
+    user_content = f"Query: {query}"
     if context_summary:
-        user_content += f"\n上下文摘要: {context_summary}"
+        user_content += f"\nContext summary: {context_summary}"
 
+    raw = ""
     try:
         llm = _get_llm()
-
+        _log_route_prompt(system_prompt, user_content)
         response = await asyncio.wait_for(
-            llm.ainvoke([
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_content),
-            ]),
-            timeout=settings.INTENT_CLASSIFIER_TIMEOUT
+            llm.ainvoke(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_content),
+                ]
+            ),
+            timeout=settings.INTENT_CLASSIFIER_TIMEOUT,
         )
 
         raw = response.content.strip()
-        logger.debug(f"🎯 [路由器] 原始响应: {raw[:300]}")
+        logger.debug("Intent router raw response: %s", raw[:300])
 
-        # 提取 JSON（兼容 markdown 代码块包裹）
         if raw.startswith("```"):
-            # 去掉 ```json 和 ```
             lines = raw.split("\n")
-            raw = "\n".join(
-                line for line in lines
-                if not line.strip().startswith("```")
-            )
+            raw = "\n".join(line for line in lines if not line.strip().startswith("```"))
 
-        data = json.loads(raw)
-        decision = RouteDecision(**data)
-
-        # 置信度校验：低于阈值则回退到 SIMPLE
-        decision = decision.with_fallback(RouteType.SIMPLE)
-
+        decision = RouteDecision(**json.loads(raw))
+        decision = _normalize_decision(decision).with_fallback(RouteType.SIMPLE)
         logger.info(
-            f"🎯 [路由器] → {decision.route}"
-            f"{'(' + decision.skill_name + ')' if decision.skill_name else ''} "
-            f"confidence={decision.confidence:.2f} "
-            f"| reason: {decision.reason} "
-            f"| query: {query[:60]}"
+            "Router -> %s%s confidence=%.2f | reason: %s | query: %s",
+            decision.route,
+            f"({decision.workflow_name or decision.skill_name})" if (decision.workflow_name or decision.skill_name) else "",
+            decision.confidence,
+            decision.reason,
+            query[:80],
         )
         return decision
 
     except asyncio.TimeoutError:
-        logger.warning(f"⚠️ [路由器] LLM 超时（{settings.INTENT_CLASSIFIER_TIMEOUT}s），使用关键词兜底")
-        return _keyword_fallback(query, loaded_skills)
-
-    except json.JSONDecodeError as e:
-        logger.warning(f"⚠️ [路由器] JSON 解析失败: {e}，使用关键词兜底 | raw: {raw[:100]}")
-        return _keyword_fallback(query, loaded_skills)
-
-    except Exception as e:
-        logger.warning(f"⚠️ [路由器] 调用失败: {e}，使用关键词兜底")
-        return _keyword_fallback(query, loaded_skills)
+        logger.warning(
+            "Intent router timed out after %ss, using keyword fallback",
+            settings.INTENT_CLASSIFIER_TIMEOUT,
+        )
+        return _keyword_fallback(query, loaded_skills, loaded_workflows)
+    except json.JSONDecodeError as exc:
+        logger.warning("Intent router JSON parse failed: %s | raw: %s", exc, raw[:120])
+        return _keyword_fallback(query, loaded_skills, loaded_workflows)
+    except Exception as exc:
+        logger.warning("Intent router failed: %s, using keyword fallback", exc)
+        return _keyword_fallback(query, loaded_skills, loaded_workflows)

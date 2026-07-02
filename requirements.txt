@@ -1,4 +1,4 @@
-# Web Framework
+﻿# Web Framework
 fastapi>=0.136.0
 uvicorn>=0.47.0
 gunicorn>=21.2.0
@@ -21,6 +21,11 @@ neo4j>=6.2.0
 # Data Processing
 openpyxl>=3.1.5
 pandas>=3.0.0
+pypdf>=4.3.0
+pdfplumber>=0.11.0
+reportlab>=4.2.0
+pdf2image>=1.17.0
+Pillow>=10.4.0
 
 # Auth
 PyJWT>=2.13.0
@@ -31,9 +36,12 @@ python-dotenv>=1.2.0
 pydantic>=2.13.0
 pydantic-settings>=2.14.0
 pyyaml>=6.0.3
+pytz>=2024.1
 
 # Tools
 tavily-python>=0.7.0
 ddgs>=9.14.0
 requests>=2.34.0
 beautifulsoup4>=4.14.0
+
+python-multipart>=0.0.20

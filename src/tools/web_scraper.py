@@ -8,6 +8,7 @@ from src.tools.base import BaseTool, ToolExecutionError
 from src.core.security import InputSecurityFilter
 import asyncio
 import logging
+import ssl
 from concurrent.futures import ThreadPoolExecutor
 import time
 from urllib.parse import urljoin, urlparse
@@ -78,6 +79,39 @@ class WebScraperTool(BaseTool):
         
         return is_safe, reason
     
+    def _request_with_ssl_fallback(self, url: str, headers: dict):
+        """
+        发送 HTTP GET 请求，SSL 失败时自动降级重试
+        1. 首次尝试：正常 SSL 验证
+        2. 降级重试：禁用 SSL 验证（应对代理/防火墙干扰）
+        """
+        import requests
+        import urllib3
+
+        # 第一次尝试：正常请求
+        try:
+            return requests.get(
+                url,
+                headers=headers,
+                timeout=self.timeout,
+                allow_redirects=True
+            )
+        except requests.exceptions.SSLError as e:
+            logger.warning(f"⚠️ SSL 错误，尝试降级重试: {url}")
+            # 降级：禁用 SSL 验证重试一次
+            try:
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                return requests.get(
+                    url,
+                    headers=headers,
+                    timeout=self.timeout,
+                    allow_redirects=True,
+                    verify=False
+                )
+            except Exception as retry_err:
+                logger.error(f"❌ SSL 降级重试也失败: {url} - {retry_err}")
+                raise e  # 抛出原始 SSL 错误
+
     def _scrape_sync(self, url: str, extract_links: bool = False, 
                    extract_images: bool = False, max_content_length: int = 5000) -> Dict[str, Any]:
         """同步抓取实现（在线程池中运行）"""
@@ -98,13 +132,8 @@ class WebScraperTool(BaseTool):
                 'Connection': 'keep-alive',
             }
             
-            # 发送请求
-            response = requests.get(
-                url,
-                headers=headers,
-                timeout=self.timeout,
-                allow_redirects=True
-            )
+            # 发送请求（带 SSL 降级重试）
+            response = self._request_with_ssl_fallback(url, headers)
             
             # 检查响应状态
             response.raise_for_status()

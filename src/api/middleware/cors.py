@@ -1,35 +1,36 @@
-"""
-CORS 中间件配置
-"""
+"""CORS middleware configuration."""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from src.config import get_settings_safe
 import logging
+
+from src.config import get_settings_safe
 
 logger = logging.getLogger(__name__)
 
 
+PRODUCTION_ENVS = {"production", "prod"}
+
+
 def setup_cors(app: FastAPI):
-    """配置 CORS"""
-
+    """Configure CORS for the FastAPI app."""
     settings = get_settings_safe()
+    app_env = str(getattr(settings, "APP_ENV", "development") or "development").strip().lower()
+    is_production = app_env in PRODUCTION_ENVS
 
-    # 生产环境安全保护：禁止使用通配符
-    if settings.CORS_ORIGINS == ["*"] and not settings.DEBUG:
+    if settings.CORS_ORIGINS == ["*"] and is_production:
         logger.error(
-            "❌ 生产环境禁止使用通配符 CORS [*]，请在 .env1 中配置 CORS_ORIGINS"
+            "production environment cannot use wildcard CORS origins; set explicit CORS_ORIGINS in .env"
         )
         raise ValueError(
-            "生产环境 CORS_ORIGINS 不能为 ['*']，请在 .env1 中明确指定允许的域名，"
-            "例如：CORS_ORIGINS=['https://yourdomain.com']"
+            "Production CORS_ORIGINS cannot be ['*']; set explicit allowed origins in .env, "
+            "for example CORS_ORIGINS=['https://yourdomain.com']"
         )
 
-    # 记录 CORS 配置
-    if settings.DEBUG:
-        logger.info(f"🔓 CORS 配置: {settings.CORS_ORIGINS}")
+    if is_production:
+        logger.info("CORS configured for production origins: %s", settings.CORS_ORIGINS)
     else:
-        logger.info(f"🔒 CORS 配置: {'生产环境安全模式' if settings.CORS_ORIGINS != ['*'] else '⚠️ 通配符模式'}")
+        logger.info("CORS configured for development origins: %s", settings.CORS_ORIGINS)
 
     app.add_middleware(
         CORSMiddleware,

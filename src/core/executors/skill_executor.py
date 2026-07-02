@@ -117,6 +117,7 @@ class SkillExecutor(BaseExecutor):
             )
             # 将 Skill 指令插入到第一条消息之前（但在原始 system prompt 之后）
             messages_with_skill = [input_messages[0], skill_message] + list(input_messages[1:])
+            agent.log_prompt_messages(f"skill_executor:{skill_name}", messages_with_skill)
 
             config = ctx.build_runnable_config()
 
@@ -137,7 +138,8 @@ class SkillExecutor(BaseExecutor):
             logger.info(f"🎯 [SkillExecutor] 开始 ReAct Agent 流式调用: {skill_name}")
 
             async with agent._semaphore:
-                async for event in agent.agent.astream_events(
+                scoped_agent = agent.get_scoped_agent(ctx.route_decision)
+                async for event in scoped_agent.astream_events(
                     {"messages": messages_with_skill},
                     config=config,
                     version="v2"

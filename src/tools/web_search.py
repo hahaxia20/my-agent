@@ -42,13 +42,54 @@ class TavilyProvider(SearchProvider):
             )
 
         client = TavilyClient(api_key=settings.TAVILY_API_KEY)
-        response = client.search(
-            query=query,
-            max_results=min(num_results, 5),
-            search_depth=search_depth,
-            include_answer=False,
-            include_raw_content=False,
-        )
+
+        # 带 SSL 降级的重试搜索
+        return self._search_with_ssl_fallback(client, query, num_results, search_depth)
+
+    def _search_with_ssl_fallback(self, client, query: str, num_results: int, search_depth: str) -> Dict[str, Any]:
+        """执行 Tavily 搜索，SSL 失败时降级禁用 SSL 验证重试"""
+        import requests
+        import urllib3
+
+        def _do_search(verify_ssl: bool = True):
+            if not verify_ssl:
+                # 临时替换 client session 的 verify 设置
+                original_verify = client.session.verify
+                client.session.verify = False
+                try:
+                    return client.search(
+                        query=query,
+                        max_results=min(num_results, 5),
+                        search_depth=search_depth,
+                        include_answer=False,
+                        include_raw_content=False,
+                    )
+                finally:
+                    client.session.verify = original_verify
+            else:
+                return client.search(
+                    query=query,
+                    max_results=min(num_results, 5),
+                    search_depth=search_depth,
+                    include_answer=False,
+                    include_raw_content=False,
+                )
+
+        try:
+            response = _do_search(verify_ssl=True)
+        except (requests.exceptions.SSLError, Exception) as e:
+            is_ssl_err = isinstance(e, requests.exceptions.SSLError) or \
+                         "SSL" in str(e) or "ssl" in str(e).lower()
+            if is_ssl_err:
+                logger.warning("⚠️ [tavily] SSL 错误，尝试降级禁用 SSL 验证重试...")
+                try:
+                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                    response = _do_search(verify_ssl=False)
+                except Exception as retry_err:
+                    logger.error(f"❌ [tavily] SSL 降级重试也失败: {retry_err}")
+                    raise e
+            else:
+                raise
 
         results = [
             {

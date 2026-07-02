@@ -1,22 +1,22 @@
-"""Skill 系统 - 注册表、解析器和实现"""
+"""Skill registry and lightweight metadata model."""
 
-import yaml
-import re
+from __future__ import annotations
+
 import logging
+import re
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Any
-from pydantic import BaseModel, Field, validator
-from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional
+
+import yaml
+from pydantic import BaseModel, Field, model_validator, field_validator
 
 logger = logging.getLogger(__name__)
 
 
-# ==================== 数据模型 ====================
-
 @dataclass
 class LoadReport:
-    """Skill 加载报告"""
     loaded: List[str] = field(default_factory=list)
     failed: List[Dict[str, str]] = field(default_factory=list)
 
@@ -25,178 +25,196 @@ class LoadReport:
         return len(self.loaded) + len(self.failed)
 
     def summary(self) -> str:
-        parts = [f"加载 {len(self.loaded)}/{self.total_attempted} 个 Skills"]
+        parts = [f"loaded {len(self.loaded)}/{self.total_attempted} skills"]
         if self.failed:
             fail_details = "; ".join(f"{f['name']}: {f['error']}" for f in self.failed)
-            parts.append(f"失败: [{fail_details}]")
-        return "，".join(parts)
+            parts.append(f"failed: [{fail_details}]")
+        return " | ".join(parts)
 
 
 @dataclass
 class ReloadReport:
-    """Skill 热重载报告"""
     added: List[str] = field(default_factory=list)
     removed: List[str] = field(default_factory=list)
     reloaded: List[str] = field(default_factory=list)
     failed: List[Dict[str, str]] = field(default_factory=list)
 
     def summary(self) -> str:
-        parts = []
+        parts: List[str] = []
         if self.added:
-            parts.append(f"新增: {self.added}")
+            parts.append(f"added: {self.added}")
         if self.removed:
-            parts.append(f"移除: {self.removed}")
+            parts.append(f"removed: {self.removed}")
         if self.reloaded:
-            parts.append(f"刷新: {len(self.reloaded)} 个")
+            parts.append(f"reloaded: {len(self.reloaded)}")
         if self.failed:
-            parts.append(f"失败: {[f['name'] for f in self.failed]}")
-        return " | ".join(parts) if parts else "无变化"
+            parts.append(f"failed: {[f['name'] for f in self.failed]}")
+        return " | ".join(parts) if parts else "no changes"
 
 
 class SkillMetadata(BaseModel):
-    """SKILL.md frontmatter 元数据"""
-    name: str = Field(..., description="Skill 名称")
-    description: str = Field(..., description="Skill 描述")
-    version: Optional[str] = Field(None, description="语义化版本号，如 1.0.0")
-    license: Optional[str] = Field(None, description="许可证")
-    compatibility: Optional[str] = Field(None, description="兼容性要求")
-    enabled: bool = Field(True, description="是否启用（可在 frontmatter 中声明默认禁用）")
-    max_tokens: Optional[int] = Field(None, description="指令最大 token 数，超出则截断")
-    metadata: Optional[Dict[str, str]] = Field(None, description="自定义元数据")
-    allowed_tools: Optional[List[str]] = Field(
-        default=None,
-        description="本 Skill 配套使用的工具列表（渐进式引导，非强制限制）"
-    )
+    name: str = Field(..., description="Skill name")
+    description: str = Field(..., description="What the skill is for")
+    trigger_keywords: List[str] = Field(default_factory=list, description="Routing keywords")
+    use_strategy: Optional[str] = Field(None, description="Short runtime strategy")
+    allowed_tools: List[str] = Field(default_factory=list, description="Allowed runtime tools")
+    version: str = Field(default="1.0.0", description="Semantic version")
+    license: Optional[str] = Field(None, description="License")
+    compatibility: Optional[str] = Field(None, description="Compatibility notes")
+    enabled: bool = Field(True, description="Whether the skill is enabled")
+    max_tokens: Optional[int] = Field(None, description="Legacy prompt guard")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Custom metadata")
 
-    @validator('name')
-    def validate_name(cls, v):
-        if not v:
-            raise ValueError("name 不能为空")
-        if len(v) > 64:
-            raise ValueError("name 不能超过 64 个字符")
-        if not re.match(r'^[a-z0-9]([a-z0-9-]*[a-z0-9])?$', v):
-            raise ValueError("name 只能包含小写字母、数字和连字符")
-        return v
+    @model_validator(mode="before")
+    @classmethod
+    def lift_legacy_metadata_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        metadata = data.get("metadata")
+        if isinstance(metadata, dict):
+            if not data.get("version") and metadata.get("version"):
+                data["version"] = str(metadata["version"])
+            metadata.pop("version", None)
+        return data
 
-    @validator('description')
-    def validate_description(cls, v):
-        if not v or not v.strip():
-            raise ValueError("description 不能为空")
-        if len(v) > 1024:
-            raise ValueError("description 不能超过 1024 个字符")
-        return v
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        if not value:
+            raise ValueError("name cannot be empty")
+        if len(value) > 64:
+            raise ValueError("name cannot exceed 64 characters")
+        if not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", value):
+            raise ValueError("name must contain lowercase letters, numbers, or hyphens")
+        return value
 
-    @validator('allowed_tools', pre=True)
-    def validate_allowed_tools(cls, v):
-        if v is None:
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("description cannot be empty")
+        if len(value) > 1024:
+            raise ValueError("description cannot exceed 1024 characters")
+        return value.strip()
+
+    @field_validator("trigger_keywords", "allowed_tools", mode="before")
+    @classmethod
+    def split_csv_like_values(cls, value: Any) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return list(value)
+
+    @field_validator("use_strategy", mode="before")
+    @classmethod
+    def normalize_strategy(cls, value: Any) -> Optional[str]:
+        if value is None:
             return None
-        # 支持逗号分隔字符串: "web_scraper, calculator"
-        if isinstance(v, str):
-            return [t.strip() for t in v.split(',') if t.strip()]
-        return v
+        return str(value).strip()
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def normalize_version(cls, value: Any) -> str:
+        if value is None or str(value).strip() == "":
+            return "1.0.0"
+        return str(value).strip()
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def normalize_metadata(cls, value: Any) -> Dict[str, Any]:
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise ValueError("metadata must be a YAML object when provided")
+        return value
 
 
 class SkillConfig(BaseModel):
-    """完整的 Skill 配置"""
     metadata: SkillMetadata
-    instructions: str = Field(..., description="Skill 指令内容")
-    skill_path: Path = Field(..., description="Skill 目录路径")
+    instructions: str = Field(default="", description="Legacy raw body content")
+    skill_path: Path = Field(..., description="Skill directory path")
     scripts: List[str] = Field(default_factory=list)
     references: List[str] = Field(default_factory=list)
     assets: List[str] = Field(default_factory=list)
-    resolved_tools: List[str] = Field(
-        default_factory=list,
-        description="经验证存在的配套工具列表"
-    )
+    resolved_tools: List[str] = Field(default_factory=list)
 
-
-# ==================== Skill 基类 ====================
 
 class BaseSkill(ABC):
-    """Skill 基类"""
-
     name: str
     description: str
     enabled: bool = True
 
     @abstractmethod
     async def execute(self, user_query: str, **kwargs) -> Any:
-        """执行 Skill"""
-        pass
+        raise NotImplementedError
 
-
-# ==================== MarkdownSkill 实现 ====================
 
 class MarkdownSkill(BaseSkill):
-    """基于 SKILL.md 的 Skill"""
+    """Skill backed by SKILL.md frontmatter metadata."""
 
     def __init__(self, skill_path: Path):
-        """初始化（只加载元数据）"""
         self.config = self._parse_skill_md(skill_path)
-
-        # 阶段 1：只存储元数据
         self.name = self.config.metadata.name
         self.description = self.config.metadata.description
         self.enabled = self.config.metadata.enabled
         self.max_tokens = self.config.metadata.max_tokens
-        self.resolved_tools = self.config.resolved_tools  # 经验证存在的工具
-        self._instructions = None  # 延迟加载
-
+        self.version = self.config.metadata.version
+        self.license = self.config.metadata.license
+        self.extra_metadata = dict(self.config.metadata.metadata)
+        self.resolved_tools = self.config.resolved_tools
+        self.allowed_tools = list(self.config.metadata.allowed_tools)
+        self.trigger_keywords = list(self.config.metadata.trigger_keywords)
+        self.use_strategy = self._resolve_use_strategy()
+        self.instruction_summary = self._build_instruction_summary()
+        self.has_declared_tools = bool(self.config.metadata.allowed_tools)
         self.skill_path = skill_path
         self.scripts = self.config.scripts
         self.references = self.config.references
         self.assets = self.config.assets
-
-        logger.info(f"✅ 加载 Skill 元数据: {self.name} (enabled={self.enabled})")
+        logger.info(
+            "loaded skill metadata: %s (enabled=%s, version=%s, tools=%s)",
+            self.name,
+            self.enabled,
+            self.version,
+            self.resolved_tools,
+        )
 
     def _parse_skill_md(self, skill_path: Path) -> SkillConfig:
-        """解析 SKILL.md 文件"""
         md_file = skill_path / "SKILL.md"
-
         if not md_file.exists():
-            raise FileNotFoundError(f"SKILL.md 不存在: {md_file}")
+            raise FileNotFoundError(f"SKILL.md missing: {md_file}")
 
-        content = md_file.read_text(encoding='utf-8')
-
-        # 提取 frontmatter
-        match = re.match(r'^---\s*\n(.*?)\n---\s*\n(.*)', content, re.DOTALL)
+        content = md_file.read_text(encoding="utf-8-sig")
+        match = re.match(r"^---\s*\n(.*?)\n---\s*\n?(.*)", content, re.DOTALL)
         if not match:
-            raise ValueError(f"SKILL.md 格式错误（缺少 frontmatter 分隔符 ---）: {md_file}")
+            raise ValueError(f"SKILL.md frontmatter missing: {md_file}")
 
         frontmatter_yaml = match.group(1)
         instructions = match.group(2).strip()
 
-        # 解析 YAML
         try:
             metadata_dict = yaml.safe_load(frontmatter_yaml)
-        except yaml.YAMLError as e:
-            raise ValueError(f"SKILL.md frontmatter YAML 解析失败: {md_file} -> {e}") from e
+        except yaml.YAMLError as exc:
+            raise ValueError(f"SKILL.md YAML parse failed: {md_file} -> {exc}") from exc
 
         if not isinstance(metadata_dict, dict):
-            raise ValueError(f"SKILL.md frontmatter 必须是 YAML 对象: {md_file}")
+            raise ValueError(f"SKILL.md frontmatter must be a YAML object: {md_file}")
 
-        try:
-            metadata = SkillMetadata(**metadata_dict)
-        except Exception as e:
-            raise ValueError(f"SKILL.md 元数据校验失败: {md_file} -> {e}") from e
+        metadata = SkillMetadata(**metadata_dict)
+        scripts = self._extract_file_links(instructions, r"\[\$\.scripts/(.+?)\]")
+        references = self._extract_file_links(instructions, r"\[\$\.references/(.+?)\]")
+        assets = self._extract_file_links(instructions, r"\[\$\.assets/(.+?)\]")
 
-        # 提取 scripts 和 references
-        scripts = self._extract_file_links(instructions, r'\[\$\.scripts/(.+?)\]')
-        references = self._extract_file_links(instructions, r'\[\$\.references/(.+?)\]')
-        assets = self._extract_file_links(instructions, r'\[\$\.assets/(.+?)\]')
-
-        # 验证 allowed_tools 中声明的工具是否在 tool_manager 中存在
-        resolved_tools = []
-        allowed_tools = metadata.allowed_tools or []
-        if allowed_tools:
+        resolved_tools: List[str] = []
+        if metadata.allowed_tools:
             from src.tools.manager import tool_manager
-            for tool_name in allowed_tools:
+
+            for tool_name in metadata.allowed_tools:
                 if tool_manager.has_tool(tool_name):
                     resolved_tools.append(tool_name)
                 else:
-                    logger.warning(
-                        f"⚠️ Skill '{metadata.name}' 声明的工具 '{tool_name}' 不存在，跳过"
-                    )
+                    logger.warning("skill '%s' declares missing tool '%s'", metadata.name, tool_name)
 
         return SkillConfig(
             metadata=metadata,
@@ -205,244 +223,218 @@ class MarkdownSkill(BaseSkill):
             scripts=scripts,
             references=references,
             assets=assets,
-            resolved_tools=resolved_tools
+            resolved_tools=resolved_tools,
         )
 
-    def _extract_file_links(self, text: str, pattern: str) -> List[str]:
-        """提取文件链接"""
+    @staticmethod
+    def _extract_file_links(text: str, pattern: str) -> List[str]:
         return re.findall(pattern, text)
 
-    async def execute(self, user_query: str, **kwargs) -> Any:
-        """执行 Skill"""
-        llm = kwargs.get("llm")
-        settings = kwargs.get("settings")
+    def _resolve_use_strategy(self) -> str:
+        strategy = (self.config.metadata.use_strategy or "").strip()
+        return strategy
 
+    def _build_instruction_summary(self) -> str:
+        instructions = (self.config.instructions or "").strip()
+        if not instructions:
+            return ""
+
+        paragraphs = [part.strip() for part in re.split(r"\n\s*\n", instructions) if part.strip()]
+        for paragraph in paragraphs:
+            if paragraph.startswith("#"):
+                continue
+            if paragraph.startswith("```"):
+                continue
+            if paragraph.startswith("- "):
+                continue
+            compact = re.sub(r"\s+", " ", paragraph).strip()
+            if compact:
+                return compact[:220] + ("..." if len(compact) > 220 else "")
+
+        fallback = re.sub(r"\s+", " ", instructions).strip()
+        return fallback[:220] + ("..." if len(fallback) > 220 else "") if fallback else ""
+
+    def build_runtime_prompt(self) -> str:
+        lines = [f"# Skill: {self.name}", self.description]
+        if self.trigger_keywords:
+            lines.append(f"Trigger keywords: {', '.join(self.trigger_keywords)}")
+        if self.use_strategy:
+            lines.append(f"Use strategy: {self.use_strategy}")
+        elif self.instruction_summary:
+            lines.append(f"Instruction summary: {self.instruction_summary}")
+        if self.version and self.version != "1.0.0":
+            lines.append(f"Version: {self.version}")
+        if self.resolved_tools:
+            lines.append(f"Allowed tools: {', '.join(self.resolved_tools)}")
+        elif self.has_declared_tools:
+            lines.append("Declared tools are currently unavailable in runtime. Do not pretend the tool calls succeeded.")
+        return "\n".join(lines)
+
+    async def execute(self, user_query: str, **kwargs) -> Any:
+        llm = kwargs.get("llm")
         if not llm:
-            return {"skill": self.name, "error": "缺少 LLM 客户端", "success": False}
+            return {"skill": self.name, "error": "missing llm", "success": False}
 
         try:
-            system_prompt = self._build_system_prompt()
-
-            logger.info(f"🎯 执行 Skill: {self.name}")
-
-            from langchain_core.messages import SystemMessage, HumanMessage
+            from langchain_core.messages import HumanMessage, SystemMessage
 
             messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_query)
+                SystemMessage(content=self.build_runtime_prompt()),
+                HumanMessage(content=user_query),
             ]
-
             response = await llm.ainvoke(messages)
-
-            logger.info(f"✅ Skill 执行完成: {self.name}")
-
             return {
                 "skill": self.name,
                 "result": response.content,
                 "success": True,
                 "metadata": {
-                    "version": self.config.metadata.metadata.get("version") if self.config.metadata.metadata else None,
-                    "author": self.config.metadata.metadata.get("author") if self.config.metadata.metadata else None
-                }
+                    "version": self.version,
+                    "author": self.extra_metadata.get("author"),
+                },
             }
-
-        except Exception as e:
-            logger.error(f"❌ Skill 执行失败: {self.name} - {str(e)}", exc_info=True)
-            return {"skill": self.name, "error": str(e), "success": False}
+        except Exception as exc:
+            logger.error("skill execution failed: %s - %s", self.name, exc, exc_info=True)
+            return {"skill": self.name, "error": str(exc), "success": False}
 
     def _build_system_prompt(self) -> str:
-        """构建系统提示词（延迟加载完整指令，含长度保护）"""
-        if self._instructions is None:
-            logger.debug(f"📥 延迟加载 Skill 完整指令: {self.name}")
-            self._instructions = self.config.instructions
+        return self.build_runtime_prompt()
 
-        instructions = self._instructions
-
-        # 指令长度保护：超过 max_tokens 时截断（1 token ≈ 2 汉字 / 4 英文字符，取近似 3 字符/token）
-        if self.max_tokens:
-            estimated_chars = self.max_tokens * 3
-            if len(instructions) > estimated_chars:
-                logger.warning(
-                    f"⚠️ Skill '{self.name}' 指令长度 {len(instructions)} 字符，"
-                    f"超过 max_tokens={self.max_tokens}（约 {estimated_chars} 字符），已截断"
-                )
-                instructions = instructions[:estimated_chars] + \
-                    "\n\n...（指令已截断，完整内容请查看 SKILL.md）"
-
-        metadata_info = f"# Skill: {self.name}\n{self.description}\n\n"
-        return metadata_info + instructions
-
-
-# ==================== SkillRegistry ====================
 
 def _parse_version(version: Optional[str]) -> tuple:
-    """将语义化版本字符串转为可比较的元组，None 视为 (0,)"""
     if not version:
         return (0,)
     try:
-        return tuple(int(x) for x in version.split("."))
+        return tuple(int(x) for x in str(version).split("."))
     except ValueError:
         return (0,)
 
 
 class SkillRegistry:
-    """Skill 注册表"""
-
     def __init__(self):
         self.skills: Dict[str, BaseSkill] = {}
 
     def get_skill(self, skill_name: str) -> Optional[BaseSkill]:
-        """获取 Skill"""
         return self.skills.get(skill_name)
 
     def has_skill(self, skill_name: str) -> bool:
-        """检查 Skill 是否存在"""
         return skill_name in self.skills
 
     def enable(self, skill_name: str) -> bool:
-        """启用 Skill，返回是否成功"""
         skill = self.skills.get(skill_name)
         if not skill:
             return False
         skill.enabled = True
-        logger.info(f"✅ Skill 已启用: {skill_name}")
+        logger.info("skill enabled: %s", skill_name)
         return True
 
     def disable(self, skill_name: str) -> bool:
-        """禁用 Skill，返回是否成功"""
         skill = self.skills.get(skill_name)
         if not skill:
             return False
         skill.enabled = False
-        logger.info(f"🚫 Skill 已禁用: {skill_name}")
+        logger.info("skill disabled: %s", skill_name)
         return True
 
     def get_active_skills(self) -> List[BaseSkill]:
-        """获取所有已启用的 Skill"""
-        return [s for s in self.skills.values() if s.enabled]
+        return [skill for skill in self.skills.values() if skill.enabled]
 
     def get_skills_metadata_list(self) -> str:
-        """获取 Skill 元数据列表（用于系统提示词，仅含已启用 Skill，含配套工具提示）"""
         active = self.get_active_skills()
         if not active:
-            return "暂无可用技能"
+            return "No active skills"
 
-        skill_lines = []
+        lines: List[str] = []
         for skill in active:
-            line = f"- **{skill.name}**: {skill.description}"
-            if getattr(skill, 'resolved_tools', None):
-                tools_str = ', '.join(f'`{t}`' for t in skill.resolved_tools)
-                line += f"（配套工具: {tools_str}）"
-            skill_lines.append(line)
+            parts = [f"- **{skill.name}**: {skill.description}"]
 
-        return "\n".join(skill_lines)
+            trigger_keywords = getattr(skill, "trigger_keywords", [])[:6]
+            if trigger_keywords:
+                parts.append(f"triggers: {', '.join(trigger_keywords)}")
+
+            resolved_tools = getattr(skill, "resolved_tools", [])
+            if resolved_tools:
+                parts.append(f"tools: {', '.join(resolved_tools)}")
+
+            strategy = re.sub(r"\s+", " ", getattr(skill, "use_strategy", "")).strip()
+            if strategy:
+                if len(strategy) > 120:
+                    strategy = strategy[:117] + "..."
+                parts.append(f"strategy: {strategy}")
+
+            version = getattr(skill, "version", "1.0.0")
+            if version and version != "1.0.0":
+                parts.append(f"version: {version}")
+
+            lines.append(" | ".join(parts))
+        return "\n".join(lines)
+
+    def get_allowed_tools(self, skill_name: str) -> List[str]:
+        skill = self.get_skill(skill_name)
+        if not skill or not getattr(skill, "enabled", True):
+            return []
+        return list(getattr(skill, "resolved_tools", []))
 
     def get_all(self) -> List[BaseSkill]:
-        """获取所有 Skill（含已禁用）"""
         return list(self.skills.values())
 
     def load_from_directory(self, skills_dir: Path) -> LoadReport:
-        """从目录加载 Skills，返回结构化加载报告"""
         report = LoadReport()
-
         if not skills_dir.exists():
-            logger.warning(f"Skills 目录不存在: {skills_dir}")
+            logger.warning("skills directory missing: %s", skills_dir)
             return report
 
         for skill_dir in skills_dir.iterdir():
-            if not skill_dir.is_dir():
+            if not skill_dir.is_dir() or skill_dir.name.startswith("__"):
                 continue
-
-            skill_md = skill_dir / "SKILL.md"
-            if not skill_md.exists():
+            if not (skill_dir / "SKILL.md").exists():
                 continue
 
             dir_name = skill_dir.name
             try:
                 skill = MarkdownSkill(skill_dir)
-
-                # 同名冲突处理：比较 version，保留高版本
                 if skill.name in self.skills:
                     existing = self.skills[skill.name]
-                    old_ver = getattr(existing, 'config', None)
-                    old_ver_str = old_ver.metadata.version if old_ver else None
-                    new_ver_str = skill.config.metadata.version
-
+                    old_ver_str = getattr(existing, "version", None)
+                    new_ver_str = skill.version
                     if _parse_version(new_ver_str) >= _parse_version(old_ver_str):
-                        logger.warning(
-                            f"⚠️ Skill '{skill.name}' 同名冲突，"
-                            f"新版本 {new_ver_str or '(无)'} >= 旧版本 {old_ver_str or '(无)'}，覆盖"
-                        )
+                        logger.warning("duplicate skill '%s', replacing older version", skill.name)
                         self.skills[skill.name] = skill
-                    else:
-                        logger.warning(
-                            f"⚠️ Skill '{skill.name}' 同名冲突，"
-                            f"新版本 {new_ver_str or '(无)'} < 旧版本 {old_ver_str or '(无)'}，保留旧版本"
-                        )
                 else:
                     self.skills[skill.name] = skill
-
                 report.loaded.append(skill.name)
-                logger.info(f"✅ 加载 Skill: {skill.name}")
+                logger.info("loaded skill: %s", skill.name)
+            except FileNotFoundError as exc:
+                report.failed.append({"name": dir_name, "error": f"missing file: {exc}"})
+            except yaml.YAMLError as exc:
+                report.failed.append({"name": dir_name, "error": f"yaml error: {exc}"})
+            except ValueError as exc:
+                report.failed.append({"name": dir_name, "error": f"validation failed: {exc}"})
+            except Exception as exc:
+                report.failed.append({"name": dir_name, "error": str(exc)})
+                logger.error("unexpected skill load failure: %s - %s", dir_name, exc, exc_info=True)
 
-            except FileNotFoundError as e:
-                report.failed.append({"name": dir_name, "error": f"文件缺失: {e}"})
-                logger.error(f"❌ 加载 Skill 失败（文件缺失）: {dir_name} - {e}")
-            except yaml.YAMLError as e:
-                report.failed.append({"name": dir_name, "error": f"YAML 格式错误: {e}"})
-                logger.error(f"❌ 加载 Skill 失败（YAML 格式错误）: {dir_name} - {e}")
-            except ValueError as e:
-                report.failed.append({"name": dir_name, "error": f"校验失败: {e}"})
-                logger.error(f"❌ 加载 Skill 失败（校验失败）: {dir_name} - {e}")
-            except Exception as e:
-                report.failed.append({"name": dir_name, "error": str(e)})
-                logger.error(f"❌ 加载 Skill 失败（未知错误）: {dir_name} - {e}", exc_info=True)
-
-        logger.info(f"📦 {report.summary()} <- {skills_dir}")
+        logger.info("%s <- %s", report.summary(), skills_dir)
         return report
 
     def reload(self, skills_dir: Optional[Path] = None) -> ReloadReport:
-        """
-        热重载：重新扫描目录，返回 ReloadReport。
-        对比 reload 前后差异，报告新增/移除/刷新/失败的 Skill。
-        """
         if skills_dir is None:
             skills_dir = Path(__file__).parent
 
         old_names = set(self.skills.keys())
-        old_versions: Dict[str, Optional[str]] = {
-            name: getattr(s, 'config', None) and s.config.metadata.version
-            for name, s in self.skills.items()
-        }
-
         self.skills.clear()
         load_report = self.load_from_directory(skills_dir)
-
         new_names = set(self.skills.keys())
-
         report = ReloadReport(
             added=sorted(new_names - old_names),
             removed=sorted(old_names - new_names),
             reloaded=sorted(new_names & old_names),
             failed=load_report.failed,
         )
-
-        logger.info(f"🔄 Skill 热重载完成: {report.summary()}")
+        logger.info("skills reloaded: %s", report.summary())
         return report
 
 
-# ==================== 全局实例 ====================
-
 skill_registry = SkillRegistry()
-
-# 自动加载 Skills
 SKILLS_DIR = Path(__file__).parent
 _init_report = skill_registry.load_from_directory(SKILLS_DIR)
-
-# 打印加载信息
-print(f"\n🎯 总计加载 {len(skill_registry.get_all())} 个 Skills:")
-for skill in skill_registry.get_all():
-    status = "✅" if skill.enabled else "🚫"
-    print(f"   {status} {skill.name}: {skill.description[:80]}...")
-if _init_report.failed:
-    print(f"⚠️ 加载失败: {_init_report.failed}")
+logger.info("skill bootstrap complete: %s skills, failed=%s", len(skill_registry.get_all()), len(_init_report.failed))
